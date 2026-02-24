@@ -44,25 +44,25 @@ No Calamares. No archinstall. Completely original.
 
 Each stage is a separate GTK screen. Completed stages are marked ✅.
 
-| # | Stage                        | Status      | Notes                                 |
-|---|------------------------------|-------------|---------------------------------------|
-| 0 | Welcome / Experience Level   | 🔲 Not started |                                    |
-| 1 | Keyboard Layout              | 🔲 Not started |                                    |
-| 2 | Language / Locale            | 🔲 Not started |                                    |
-| 3 | Network Check                | 🔲 Not started |                                    |
-| 4 | Disk Selection               | 🔲 Not started | Most critical — do early             |
-| 5 | Partition Scheme             | 🔲 Not started | MBR/GPT, auto vs manual              |
-| 6 | Filesystem + Encryption      | 🔲 Not started | ext4/btrfs/xfs, LUKS optional        |
-| 7 | Mirror Selection             | 🔲 Not started | reflector integration                |
-| 8 | Package Selection            | 🔲 Not started | base, DE, extras                     |
-| 9 | Base Install (pacstrap)      | 🔲 Not started | Live progress bar                    |
-|10 | Timezone                     | 🔲 Not started |                                      |
-|11 | Locale / Hostname            | 🔲 Not started |                                      |
-|12 | User + Root Setup            | 🔲 Not started |                                      |
-|13 | Bootloader                   | 🔲 Not started | GRUB / systemd-boot / rEFInd         |
-|14 | Review & Confirm             | 🔲 Not started | Full summary before any writes       |
-|15 | Installation Progress        | 🔲 Not started | Live log + progress                  |
-|16 | Complete / Reboot            | 🔲 Not started |                                      |
+| # | Stage                        | Status         | Notes                                 |
+|---|------------------------------|----------------|---------------------------------------|
+| 0 | Welcome / Experience Level   | ✅ Complete     | welcome.py, main.py, style.css done   |
+| 1 | Keyboard Layout              | 🔲 Not started |                                       |
+| 2 | Language / Locale            | 🔲 Not started |                                       |
+| 3 | Network Check                | 🔲 Not started |                                       |
+| 4 | Disk Selection               | 🔲 Not started | Most critical — do early              |
+| 5 | Partition Scheme             | 🔲 Not started | MBR/GPT, auto vs manual               |
+| 6 | Filesystem + Encryption      | 🔲 Not started | ext4/btrfs/xfs, LUKS optional         |
+| 7 | Mirror Selection             | 🔲 Not started | reflector integration                 |
+| 8 | Package Selection            | 🔲 Not started | base, DE, extras                      |
+| 9 | Base Install (pacstrap)      | 🔲 Not started | Live progress bar                     |
+|10 | Timezone                     | 🔲 Not started |                                       |
+|11 | Locale / Hostname            | 🔲 Not started |                                       |
+|12 | User + Root Setup            | 🔲 Not started |                                       |
+|13 | Bootloader                   | 🔲 Not started | GRUB / systemd-boot / rEFInd          |
+|14 | Review & Confirm             | 🔲 Not started | Full summary before any writes        |
+|15 | Installation Progress        | 🔲 Not started | Live log + progress                   |
+|16 | Complete / Reboot            | 🔲 Not started |                                       |
 
 ---
 
@@ -80,7 +80,7 @@ arch-installer/
 │   ├── state.py                ← Global install state object (passed between stages)
 │   ├── ui/
 │   │   ├── base_screen.py      ← Base class all screens inherit from
-│   │   ├── welcome.py          ← Stage 0
+│   │   ├── welcome.py          ← Stage 0  ✅
 │   │   ├── keyboard.py         ← Stage 1
 │   │   ├── locale_screen.py    ← Stage 2
 │   │   ├── network.py          ← Stage 3
@@ -107,7 +107,7 @@ arch-installer/
 │   └── assets/
 │       ├── installer.svg
 │       ├── installer.png
-│       └── style.css           ← Shared GTK CSS (extracted from inline)
+│       └── style.css           ← Shared GTK CSS ✅ (dark GitHub theme, Stage 0 styles included)
 ├── tests/
 │   └── test_disk.py            ← Unit tests for disk backend (safe, no writes)
 ├── docs/
@@ -129,6 +129,17 @@ This makes it safe to go back and change options at any point.
 
 ---
 
+## Stage 0 — Implementation Notes (welcome.py)
+
+- `WelcomeScreen` extends `Gtk.Box` (horizontal split: left content + right info panel)
+- Three `Gtk.EventBox` cards for Beginner / Intermediate / Advanced
+- Card state (hover, selected) driven entirely by CSS classes — no inline styling
+- Info panel text lives in `WELCOME_INFO` dict keyed by experience level string
+- `on_next` callback writes `state.experience_level` before handing off to the stage controller
+- `main.py` uses a `Gtk.Stack` with `SLIDE_LEFT` transitions (220ms); new stages are registered in the `STAGE_CLASSES` list
+
+---
+
 ## Current Session Notes
 
 **Session 1 — Project bootstrap**
@@ -139,11 +150,16 @@ This makes it safe to go back and change options at any point.
 - Created installer/state.py (InstallState dataclass)
 - Created installer/ui/base_screen.py (base class with info panel)
 - Created assets (SVG + PNG icon)
-- Next session: Start Stage 0 (Welcome screen) and Stage 1 (Keyboard)
+
+**Session 2 — Stage 0: Welcome / Experience Level**
+- Implemented `installer/ui/welcome.py` (WelcomeScreen)
+- Implemented `installer/assets/style.css` (dark GitHub theme, full palette)
+- Updated `installer/main.py` with Gtk.Stack stage controller and Stage 0 wired in
+- Next session: **Stage 1 — Keyboard Layout** (`installer/ui/keyboard.py`)
 
 **What to tell Claude next session:**
 > "We're building an Arch Linux GTK3 installer in Python. Here's the full context: [paste this file].
->  Today I want to work on [STAGE NAME]."
+>  Today I want to work on Stage 1 — Keyboard Layout."
 
 ---
 
@@ -162,3 +178,4 @@ This makes it safe to go back and change options at any point.
 | Session | Commit message                                      |
 |---------|-----------------------------------------------------|
 | 1       | chore: initial project scaffold and architecture    |
+| 2       | feat(stage-0): welcome screen and experience level  |

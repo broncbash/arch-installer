@@ -1,0 +1,136 @@
+/*
+ * arch-installer — style.css
+ * Dark GitHub-style theme. Stage 0 additions included.
+ *
+ * Colour palette (CSS-compatible references)
+ *   --bg-0:      #0d1117   deepest background
+ *   --bg-1:      #161b22   card / panel background
+ *   --bg-2:      #21262d   elevated surface / hover
+ *   --border:    #30363d   standard border
+ *   --border-hl: #58a6ff   highlighted / selected border
+ *   --fg-0:      #e6edf3   primary text
+ *   --fg-1:      #8b949e   secondary / muted text
+ *   --accent:    #58a6ff   blue accent (links, selected)
+ *   --green:     #3fb950   success
+ *   --red:       #f85149   error
+ *   --yellow:    #d29922   warning
+ */
+
+/* ── Window root ───────────────────────────────────────────────────────── */
+window {
+    background-color: #0d1117;
+    color: #e6edf3;
+    font-family: "JetBrains Mono", "Source Code Pro", "Fira Code", monospace;
+    font-size: 14px;
+}
+
+/* ── Welcome screen — left pane ───────────────────────────────────────── */
+.welcome-left {
+    background-color: #0d1117;
+}
+
+.welcome-logo {
+    font-size: 52px;
+    color: #58a6ff;
+    margin-bottom: 12px;
+}
+
+.welcome-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: #e6edf3;
+    letter-spacing: -0.5px;
+}
+
+.welcome-subtitle {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 4px;
+}
+
+.section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+}
+
+/* ── Level cards ──────────────────────────────────────────────────────── */
+.level-card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+.level-card.hover {
+    background-color: #1c2128;
+    border-color: #8b949e;
+}
+
+.level-card.selected {
+    background-color: #0c2d6b;
+    border-color: #58a6ff;
+    border-width: 2px;
+}
+
+.card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e6edf3;
+}
+
+.level-card.selected .card-title {
+    color: #79c0ff;
+}
+
+.card-desc {
+    font-size: 12px;
+    color: #8b949e;
+}
+
+/* ── Info panel — right pane ──────────────────────────────────────────── */
+.info-panel {
+    background-color: #161b22;
+    border-left: 1px solid #30363d;
+}
+
+.info-panel-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #58a6ff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.info-panel-text {
+    font-size: 13px;
+    color: #8b949e;
+    line-height: 1.6;
+}
+
+/* ── Navigation buttons ───────────────────────────────────────────────── */
+.next-button {
+    background-color: #1f6feb;
+    color: #ffffff;
+    border: 1px solid #388bfd;
+    border-radius: 6px;
+    padding: 8px 24px;
+    font-weight: 600;
+    font-size: 13px;
+    min-width: 140px;
+}
+
+.next-button:hover {
+    background-color: #388bfd;
+}
+
+.next-button:active {
+    background-color: #1158c7;
+}
+
+/* ── Separators ───────────────────────────────────────────────────────── */
+separator {
+    background-color: #30363d;
+    min-height: 1px;
+}
