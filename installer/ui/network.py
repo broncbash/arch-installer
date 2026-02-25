@@ -62,7 +62,6 @@ class NetworkScreen(BaseScreen):
         return True, ""
 
     def on_next(self):
-        _
         self.state.network_connected = self._connected
         self.state.network_skipped   = False
         self.state.network_ok        = self._connected
@@ -326,7 +325,6 @@ class NetworkScreen(BaseScreen):
         open_wiki(url, connected=self._connected)
 
     def _on_skip(self, _btn):
-        _
         self.state.network_connected = False
         self.state.network_skipped   = True
         self.state.network_ok        = False

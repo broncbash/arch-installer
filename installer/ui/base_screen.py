@@ -5,6 +5,7 @@ Base class for every installer screen.
 Provides:
   - Standard two-column layout (content left, info panel right)
   - Info panel that updates based on experience level
+  - Optional "📖 Arch Wiki" links section in the info panel
   - Navigation buttons (Back / Next)
   - Consistent styling hooks
 """
@@ -14,6 +15,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib
 
 from installer.state import InstallState
+
 
 class BaseScreen(Gtk.Box):
     """
@@ -34,14 +36,26 @@ class BaseScreen(Gtk.Box):
         on_next(self)
             Called when Next is clicked and validate() passes.
             Write selections back to self.state here.
+
+    Optional:
+        WIKI_LINKS = [("Link label", "https://..."), ...]
+            Define this as a class variable to show an Arch Wiki section
+            in the info panel. Leave it empty (the default) for no wiki links.
+
+        on_experience_changed(self)
+            Override to show/hide options when the experience level changes.
     """
 
-    # Subclasses set these
+    # Subclasses set these as class variables
     title: str = "Screen Title"
     subtitle: str = ""
 
-    def __init__(self, state: InstallState,
-                 on_back=None, on_next=None):
+    # Subclasses can set this to show wiki links in the info panel.
+    # Format: list of (label_string, url_string) tuples.
+    # Example: [("Console Keymap", "https://wiki.archlinux.org/...")]
+    WIKI_LINKS: list = []
+
+    def __init__(self, state: InstallState, on_back=None, on_next=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.state = state
         self._on_back_cb = on_back
@@ -56,7 +70,9 @@ class BaseScreen(Gtk.Box):
     # ── Shell layout ─────────────────────────────────────────────────────────
 
     def _build_shell(self):
-        # Title bar
+        """Build the standard two-column layout with title bar and nav bar."""
+
+        # ── Title bar ────────────────────────────────────────────────────────
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         title_box.get_style_context().add_class("screen-title-box")
         title_box.set_margin_start(32)
@@ -81,12 +97,12 @@ class BaseScreen(Gtk.Box):
         sep.get_style_context().add_class("screen-sep")
         self.pack_start(sep, False, False, 0)
 
-        # Main body: content (left) + info panel (right)
+        # ── Main body: content (left) + info panel (right) ───────────────────
         body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         body.set_hexpand(True)
         body.set_vexpand(True)
 
-        # Content area
+        # Content area — scrollable, takes up all remaining space
         content_scroll = Gtk.ScrolledWindow()
         content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         content_scroll.set_hexpand(True)
@@ -103,11 +119,12 @@ class BaseScreen(Gtk.Box):
         content_scroll.add(content_wrapper)
         body.pack_start(content_scroll, True, True, 0)
 
-        # Info panel (fixed width)
+        # ── Info panel (fixed width, right side) ─────────────────────────────
         info_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         info_panel.get_style_context().add_class("info-panel")
         info_panel.set_size_request(280, -1)
 
+        # "Hints & Info" header
         info_header = Gtk.Label(label="💡  Hints & Info")
         info_header.get_style_context().add_class("info-panel-header")
         info_header.set_halign(Gtk.Align.START)
@@ -120,6 +137,7 @@ class BaseScreen(Gtk.Box):
         sep2 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         info_panel.pack_start(sep2, False, False, 0)
 
+        # Scrollable hint text
         info_scroll = Gtk.ScrolledWindow()
         info_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         info_scroll.set_vexpand(True)
@@ -137,7 +155,41 @@ class BaseScreen(Gtk.Box):
         info_scroll.add(self.hint_label)
         info_panel.pack_start(info_scroll, True, True, 0)
 
-        # Experience level selector inside info panel
+        # ── Wiki links section (only shown if subclass defines WIKI_LINKS) ────
+        if self.WIKI_LINKS:
+            wiki_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            info_panel.pack_start(wiki_sep, False, False, 0)
+
+            # Labeled frame with "📖 Arch Wiki" title
+            wiki_frame = Gtk.Frame()
+            wiki_frame.get_style_context().add_class("wiki-frame")
+            wiki_frame.set_margin_start(12)
+            wiki_frame.set_margin_end(12)
+            wiki_frame.set_margin_top(10)
+            wiki_frame.set_margin_bottom(10)
+
+            wiki_title = Gtk.Label(label="📖  Arch Wiki")
+            wiki_title.get_style_context().add_class("wiki-frame-title")
+            wiki_frame.set_label_widget(wiki_title)
+
+            wiki_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            wiki_box.set_margin_start(8)
+            wiki_box.set_margin_end(8)
+            wiki_box.set_margin_top(6)
+            wiki_box.set_margin_bottom(8)
+
+            for label_text, url in self.WIKI_LINKS:
+                btn = Gtk.Button(label=label_text)
+                btn.get_style_context().add_class("wiki-link-button")
+                # Capture url in a default argument so the closure works correctly
+                # in a loop (a common Python gotcha).
+                btn.connect("clicked", lambda _b, u=url: self._open_wiki(u))
+                wiki_box.pack_start(btn, False, False, 0)
+
+            wiki_frame.add(wiki_box)
+            info_panel.pack_start(wiki_frame, False, False, 0)
+
+        # ── Experience level selector (always at bottom of info panel) ────────
         level_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         level_box.set_margin_start(16)
         level_box.set_margin_end(16)
@@ -159,6 +211,7 @@ class BaseScreen(Gtk.Box):
         level_box.pack_start(self._level_combo, False, False, 0)
 
         info_panel.pack_end(level_box, False, False, 0)
+
         sep3 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         info_panel.pack_end(sep3, False, False, 0)
 
@@ -169,7 +222,7 @@ class BaseScreen(Gtk.Box):
 
         self.pack_start(body, True, True, 0)
 
-        # Navigation bar
+        # ── Navigation bar ────────────────────────────────────────────────────
         nav_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         self.pack_start(nav_sep, False, False, 0)
 
@@ -202,9 +255,22 @@ class BaseScreen(Gtk.Box):
 
         self.pack_start(nav, False, False, 0)
 
+    # ── Wiki viewer ───────────────────────────────────────────────────────────
+
+    def _open_wiki(self, url: str):
+        """
+        Open a wiki URL in the in-app WikiViewer window.
+        Passes the current network state so the viewer can show the
+        'no connection' fallback page if we're not online yet.
+        """
+        from installer.wiki.viewer import open_wiki
+        connected = getattr(self.state, "network_ok", False)
+        open_wiki(url, connected=connected)
+
     # ── Hint panel ───────────────────────────────────────────────────────────
 
     def refresh_hints(self):
+        """Re-read hints from get_hints() and update the info panel text."""
         hints = self.get_hints()
         text = hints.get(self.state.experience_level, "")
         self.hint_label.set_text(text)
@@ -226,8 +292,9 @@ class BaseScreen(Gtk.Box):
             self._on_back_cb()
 
     def _set_nav_ready(self):
+        """Called 300ms after the screen loads to prevent accidental Next clicks."""
         self._nav_ready = True
-        return False  # don't repeat the timeout
+        return False  # returning False stops the GLib timeout from repeating
 
     def _on_next_clicked(self, _btn):
         if not self._nav_ready:
@@ -242,9 +309,16 @@ class BaseScreen(Gtk.Box):
             self._on_next_cb()
 
     def set_back_enabled(self, enabled: bool):
+        """Enable or disable the Back button."""
         self.back_btn.set_sensitive(enabled)
 
+    def set_next_enabled(self, enabled: bool):
+        """Enable or disable the Next button.
+        Call this from build_content() or later to gate progression."""
+        self.next_btn.set_sensitive(enabled)
+
     def set_next_label(self, label: str):
+        """Change the Next button's text (e.g. to 'Install' on the last step)."""
         self.next_btn.set_label(label)
 
     # ── Subclass interface ────────────────────────────────────────────────────
@@ -255,7 +329,8 @@ class BaseScreen(Gtk.Box):
         return placeholder
 
     def get_hints(self) -> dict:
-        """Override: return hints dict keyed by experience level."""
+        """Override: return hints dict keyed by experience level string.
+        Keys should be 'beginner', 'intermediate', 'advanced'."""
         return {
             "beginner":     "No hints available for this screen yet.",
             "intermediate": "No hints available for this screen yet.",
@@ -263,9 +338,9 @@ class BaseScreen(Gtk.Box):
         }
 
     def validate(self):
-        """Override: return (True, '') or (False, 'error message')."""
+        """Override: return (True, '') to allow Next, or (False, 'message') to block it."""
         return True, ""
 
     def on_next(self):
-        """Override: commit selections to self.state before navigating away."""
+        """Override: save selections to self.state just before navigating away."""
         pass

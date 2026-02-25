@@ -13,6 +13,9 @@ from gi.repository import Gtk, Gdk, GLib
 from installer.state import InstallState
 from installer.ui.welcome import WelcomeScreen
 from installer.ui.network import NetworkScreen
+from installer.ui.keyboard import KeyboardScreen
+from installer.ui.locale_screen import LocaleScreen
+from installer.ui.disk_select import DiskSelectScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -31,9 +34,11 @@ class InstallerWindow(Gtk.Window):
     """Top-level window that hosts each stage screen."""
 
     STAGE_CLASSES = [
-        ("Welcome",       lambda: WelcomeScreen),
-        ("Network Setup", lambda: NetworkScreen),
-        # ("Keyboard",   lambda: KeyboardScreen),  # Stage 2 — TBD
+        ("Welcome",        lambda: WelcomeScreen),
+        ("Network Setup",  lambda: NetworkScreen),
+        ("Keyboard",       lambda: KeyboardScreen),
+        ("Locale",         lambda: LocaleScreen),
+        ("Disk",           lambda: DiskSelectScreen),
     ]
 
     def __init__(self):
@@ -96,7 +101,11 @@ class InstallerWindow(Gtk.Window):
             text="Stage complete",
         )
         dlg.format_secondary_text(
-            f"Experience level saved: {self.state.experience_level}\n"
+            f"Experience level : {self.state.experience_level}\n"
+            f"Keyboard layout  : {self.state.keyboard_layout}\n"
+            f"Locale           : {self.state.locale}\n"
+            f"Disk             : {self.state.target_disk}\n"
+            f"Boot mode        : {self.state.boot_mode}\n"
             "(Next stages not yet implemented.)"
         )
         dlg.run()

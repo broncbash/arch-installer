@@ -34,7 +34,7 @@ class InstallState:
     experience_level: str = "beginner"
 
     # ── Locale / keyboard ─────────────────────────────────────────────────────
-    keyboard_layout: str = "us"
+    keyboard_layout: str = "us"      # console keymap, e.g. 'us', 'de', 'fr'
     language: str = "en_US"
     locale: str = "en_US.UTF-8"
     timezone: str = "UTC"
@@ -69,7 +69,7 @@ class InstallState:
     ])
     # User-selected extras
     extra_packages: List[str] = field(default_factory=list)
-    desktop_environment: str = ""    # 'gnome'|'kde'|'xfce'|'sway'|''  etc.
+    desktop_environment: str = ""    # 'gnome'|'kde'|'xfce'|'sway'|'' etc.
     display_manager: str = ""        # 'gdm'|'sddm'|'lightdm'|'' etc.
     network_manager: str = "NetworkManager"
 

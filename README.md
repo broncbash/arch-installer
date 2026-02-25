@@ -22,16 +22,18 @@
 A clean-room graphical Arch Linux installer — no Calamares, no archinstall.
 Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 
-### Key Features (planned)
+### Key Features
 
 - **Experience levels** — Beginner, Intermediate, and Advanced modes that adjust
   available options and explanations on every screen
 - **Contextual hints** — every screen has an info panel with suggestions tailored
   to your experience level
+- **Integrated Arch Wiki viewer** — wiki links on every screen open an in-app
+  WebKit2GTK browser window, with a graceful fallback if offline
 - **Full partitioning support** — MBR/GPT, automatic layouts, manual partitioning,
-  LUKS encryption, Btrfs subvolumes
-- **Bootloader choice** — GRUB, systemd-boot, or rEFInd
-- **Desktop environment selection** — choose your DE/WM at install time
+  LUKS encryption, Btrfs subvolumes *(coming soon)*
+- **Bootloader choice** — GRUB, systemd-boot, rEFInd, EFIStub, UKI *(coming soon)*
+- **Desktop environment selection** — choose your DE/WM at install time *(coming soon)*
 - **Nothing written to disk** until you confirm the final review screen
 - **Full install log** at `/tmp/arch-installer.log`
 
@@ -41,18 +43,18 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 
 | # | Stage | Status |
 |---|-------|--------|
-| 0 | Welcome / Experience Level | 🔲 Planned |
-| 1 | Keyboard Layout | 🔲 Planned |
-| 2 | Language / Locale | 🔲 Planned |
-| 3 | Network Check | 🔲 Planned |
-| 4 | Disk Selection | 🔲 Planned |
+| 0 | Welcome / Experience Level | ✅ Complete |
+| 1 | Network Setup | ✅ Complete |
+| 2 | Keyboard Layout | ✅ Complete |
+| 3 | Language / Locale | ✅ Complete |
+| 4 | Disk Selection | ✅ Complete |
 | 5 | Partition Scheme | 🔲 Planned |
 | 6 | Filesystem + Encryption | 🔲 Planned |
 | 7 | Mirror Selection | 🔲 Planned |
 | 8 | Package Selection | 🔲 Planned |
 | 9 | Base Install (pacstrap) | 🔲 Planned |
 | 10 | Timezone | 🔲 Planned |
-| 11 | Locale / Hostname | 🔲 Planned |
+| 11 | System Config / Hostname | 🔲 Planned |
 | 12 | User + Root Setup | 🔲 Planned |
 | 13 | Bootloader | 🔲 Planned |
 | 14 | Review & Confirm | 🔲 Planned |
@@ -64,16 +66,25 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 ## Dependencies
 
 ```bash
-sudo pacman -S python python-gobject gtk3 polkit parted
+sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted
 ```
+
+> **Note:** `webkit2gtk` is required for the integrated Arch Wiki viewer.
+> Without it the viewer falls back to displaying the raw URL.
+
+---
 
 ## Running (development)
 
 ```bash
 git clone git@gitlab.com:broncbash/arch-installer.git
 cd arch-installer
-sudo python installer/main.py
+python3 -m installer.main
 ```
+
+> You do not need `sudo` to run the installer UI during development.
+> Privilege escalation (via polkit/pkexec) will be used only when
+> actual disk operations begin in a later stage.
 
 ---
 
@@ -82,16 +93,42 @@ sudo python installer/main.py
 ```
 arch-installer/
 ├── installer/
-│   ├── main.py          # Entry point
-│   ├── state.py         # Shared install state
-│   ├── ui/              # One file per installer screen
-│   ├── backend/         # Disk, pacstrap, chroot, config logic
-│   └── assets/          # Icons, CSS
+│   ├── main.py              # Entry point, stage controller
+│   ├── state.py             # Shared install state (passed between all screens)
+│   ├── ui/
+│   │   ├── base_screen.py   # Base class all screens inherit from
+│   │   ├── welcome.py       # Stage 0 — Welcome / Experience Level
+│   │   ├── network.py       # Stage 1 — Network Setup
+│   │   ├── keyboard.py      # Stage 2 — Keyboard Layout
+│   │   ├── locale_screen.py # Stage 3 — Language / Locale
+│   │   ├── disk_select.py   # Stage 4 — Disk Selection
+│   │   └── ...              # Remaining stages (in progress)
+│   ├── backend/
+│   │   ├── network.py       # Connectivity checks, iwd WiFi wrapper
+│   │   ├── keyboard.py      # localectl / loadkeys wrappers
+│   │   ├── locale.py        # locale.gen parser
+│   │   ├── disk.py          # lsblk wrapper, boot mode detection
+│   │   └── ...              # Disk ops, pacstrap, chroot, config (planned)
+│   ├── wiki/
+│   │   └── viewer.py        # In-app WebKit2GTK wiki viewer
+│   └── assets/
+│       ├── installer.png
+│       ├── installer.svg
+│       └── style.css        # Dark GitHub-style GTK theme
 ├── tests/
 ├── docs/
 ├── PKGBUILD
-└── CLAUDE.md            # Developer session continuity file
+└── CLAUDE.md                # Developer session continuity file
 ```
+
+---
+
+## Design Philosophy
+
+This installer is built as a learning project with the goal of understanding
+both the Arch Linux installation process and GTK3 application development deeply.
+Every design decision follows the Arch Wiki, and every screen is built to be
+understandable at the Beginner level while exposing full control at the Advanced level.
 
 ---
 

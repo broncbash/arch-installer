@@ -51,9 +51,9 @@ Each stage is a separate GTK screen. Completed stages are marked ✅.
 |---|------------------------------|----------------|---------------------------------------------------------|
 | 0 | Welcome / Experience Level   | ✅ Complete     | welcome.py, main.py, style.css done                     |
 | 1 | Network Setup                | ✅ Complete     | network.py (UI+backend), wiki viewer done               |
-| 2 | Keyboard Layout              | 🔲 Not started |                                                         |
-| 3 | Language / Locale            | 🔲 Not started |                                                         |
-| 4 | Disk Selection               | 🔲 Not started | Most critical — do early                                |
+| 2 | Keyboard Layout              | ✅ Complete     | keyboard.py (UI+backend)                                |
+| 3 | Language / Locale            | ✅ Complete     | locale_screen.py (UI+backend)                           |
+| 4 | Disk Selection               | ✅ Complete     | disk_select.py (UI), disk.py (backend, partial)         |
 | 5 | Partition Scheme             | 🔲 Not started | MBR/GPT, auto vs manual                                 |
 | 6 | Filesystem + Encryption      | 🔲 Not started | ext4/btrfs/xfs, LUKS optional. Note UKI dependency.     |
 | 7 | Mirror Selection             | 🔲 Not started | reflector integration                                   |
@@ -90,9 +90,9 @@ arch-installer/
 │   │   ├── base_screen.py      ← Base class all screens inherit from ✅
 │   │   ├── welcome.py          ← Stage 0  ✅
 │   │   ├── network.py          ← Stage 1  ✅
-│   │   ├── keyboard.py         ← Stage 2
-│   │   ├── locale_screen.py    ← Stage 3
-│   │   ├── disk_select.py      ← Stage 4
+│   │   ├── keyboard.py         ← Stage 2  ✅
+│   │   ├── locale_screen.py    ← Stage 3  ✅
+│   │   ├── disk_select.py      ← Stage 4  ✅
 │   │   ├── partition.py        ← Stage 5
 │   │   ├── filesystem.py       ← Stage 6
 │   │   ├── mirrors.py          ← Stage 7
@@ -107,7 +107,9 @@ arch-installer/
 │   ├── backend/
 │   │   ├── __init__.py
 │   │   ├── network.py          ← connectivity checks, iwd wrapper ✅
-│   │   ├── disk.py             ← parted/sgdisk wrappers, partition logic
+│   │   ├── keyboard.py         ← localectl / loadkeys wrappers ✅
+│   │   ├── locale.py           ← locale.gen parser ✅
+│   │   ├── disk.py             ← lsblk wrapper, boot mode detection ✅ (partial — partitioning logic to be added)
 │   │   ├── filesystem.py       ← mkfs.*, mount/umount helpers
 │   │   ├── pacstrap.py         ← pacstrap runner with progress parsing
 │   │   ├── chroot.py           ← arch-chroot command runner
@@ -136,7 +138,7 @@ This makes it safe to go back and change options at any point.
 4. Logging goes to `/tmp/arch-installer.log` during install.
 5. The info panel on every screen pulls from a dict keyed by `experience_level` string.
 6. Every screen defines a `WIKI_LINKS` list of `(label, url)` tuples rendered inside
-   a labeled "📖 Arch Wiki" frame. Clicking opens the wiki viewer window.
+   a labeled "📖 Arch Wiki" frame in the info panel. Clicking opens the wiki viewer window.
 7. The wiki viewer is non-modal — users can keep it open while using the installer.
 8. The wiki viewer gracefully handles no network connection (shows friendly message + raw URL).
 
@@ -151,97 +153,105 @@ python3 -m installer.main
 
 ---
 
+## BaseScreen Interface (installer/ui/base_screen.py)
+
+All stage screens extend `BaseScreen`. Key points for new screens:
+
+### Class variables (set at class level, not in __init__)
+```python
+class MyScreen(BaseScreen):
+    title    = "Screen Title"
+    subtitle = "Optional subtitle shown below the title"
+    WIKI_LINKS = [
+        ("Link Label", "https://wiki.archlinux.org/title/..."),
+    ]
+```
+
+### Methods to implement
+```python
+def get_hints(self) -> dict:
+    # Return hints keyed by 'beginner', 'intermediate', 'advanced'
+    return {"beginner": "...", "intermediate": "...", "advanced": "..."}
+
+def build_content(self) -> Gtk.Widget:
+    # Build and return the left-side content widget
+    # Called automatically by BaseScreen.__init__
+    ...
+    return root_widget
+
+def validate(self) -> tuple:
+    # Return (True, '') to allow Next, or (False, 'message') to block
+    return True, ""
+
+def on_next(self):
+    # Save selections to self.state before navigating away
+    self.state.some_field = self._selected_value
+```
+
+### Optional override
+```python
+def on_experience_changed(self):
+    # Called when user changes experience level dropdown
+    # Use to show/hide advanced options
+    pass
+```
+
+### Useful BaseScreen methods
+```python
+self.set_next_enabled(bool)   # enable/disable the Next button
+self.set_next_label(str)      # change Next button text
+self.set_back_enabled(bool)   # enable/disable Back button
+self.error_label.set_text(str) # show an error message in the nav bar
+```
+
+### __init__ signature
+```python
+def __init__(self, state, on_next, on_back):
+    # Set instance variables BEFORE calling super().__init__
+    # because super().__init__ calls build_content() immediately
+    self._my_var = some_default
+    super().__init__(state=state, on_next=on_next, on_back=on_back)
+```
+
+---
+
 ## Feature Design: Arch Wiki Viewer
 
 ### Overview
-Every installer screen has a `WIKI_LINKS` list of `(label, url)` tuples. These render
-inside a bordered "📖 Arch Wiki" frame in the content area. Clicking opens a separate
-non-modal `Gtk.Window` containing a `WebKit2.WebView` pointed at that wiki page.
+Every installer screen has a `WIKI_LINKS` class variable — a list of `(label, url)` tuples.
+`BaseScreen` automatically renders these as buttons inside a "📖 Arch Wiki" frame in the
+info panel. Clicking opens a non-modal `WikiViewer` window.
 
 ### Implementation
 - File: `installer/wiki/viewer.py`
-- Class: `WikiViewer(Gtk.Window)`
-  - Takes a URL, opens a ~960×720 non-modal window
-  - Has a simple toolbar: Back, Forward, Reload, URL bar (read-only), Close
-  - Themed to match the dark installer aesthetic
-- Called from each screen's `_open_wiki()` method
-- Multiple viewer windows can be open simultaneously (one per link clicked)
+- Public API: `open_wiki(url, connected)` — opens a new viewer window
+- `BaseScreen._open_wiki(url)` calls this, passing `state.network_ok` for the connected flag
+- Tries WebKit2 4.1, falls back to 4.0
+- If no network or no WebKit: shows friendly fallback page with selectable raw URL
+- Non-modal: multiple wiki windows can be open simultaneously
 
-### Network dependency
-- Wiki viewer requires an active network connection to load pages
-- If no connection is detected, or WebKit2GTK is not installed, viewer shows:
-  *"No network connection yet. Connect in Stage 1 (Network Setup) to browse the wiki."*
-  with the raw URL displayed for manual reference
+---
 
-### Dependency
-- Requires `webkit2gtk` package (add to PKGBUILD and README prerequisites)
-- Python binding via `gi.repository`: `gi.require_version("WebKit2", "4.1")`
-  (falls back to 4.0 if 4.1 not available)
+## Stage Controller (installer/main.py)
 
-### Example WIKI_LINKS usage (per screen)
+### Adding a new stage
+1. Import the screen class at the top of main.py
+2. Add to STAGE_CLASSES list:
 ```python
-WIKI_LINKS = [
-    ("Installation Guide",  "https://wiki.archlinux.org/title/Installation_guide"),
-    ("Partitioning",        "https://wiki.archlinux.org/title/Partitioning"),
+STAGE_CLASSES = [
+    ("Welcome",       lambda: WelcomeScreen),
+    ("Network Setup", lambda: NetworkScreen),
+    ("Keyboard",      lambda: KeyboardScreen),
+    ("Locale",        lambda: LocaleScreen),
+    ("Disk",          lambda: DiskSelectScreen),
+    ("Partition",     lambda: PartitionScreen),   # ← add like this
 ]
 ```
 
----
-
-## Feature Design: BaseScreen
-
-Every stage screen (Stage 1 onwards) extends `BaseScreen` from `installer/ui/base_screen.py`.
-
-### What BaseScreen provides
-- Two-column layout: scrollable content area (left) + fixed info panel (right, 280px)
-- Title + subtitle bar at top
-- Info panel with "💡 Hints & Info" header, scrollable hint text, experience level combo
-- Navigation bar at bottom: ◀ Back | error label | Next ▶
-- `_nav_ready` guard (300ms timer) prevents spurious Next clicks on screen load
-- Experience level combo in info panel updates hints live and persists to state
-
-### Subclass interface
-```python
-class MyScreen(BaseScreen):
-    title = "My Screen"
-    subtitle = "Optional subtitle"
-
-    def build_content(self) -> Gtk.Widget:
-        # Return the left-side content widget
-
-    def get_hints(self) -> dict:
-        return {
-            "beginner":     "...",
-            "intermediate": "...",
-            "advanced":     "...",
-        }
-
-    def validate(self) -> tuple[bool, str]:
-        # Return (True, "") or (False, "error message")
-
-    def on_next(self):
-        # Write selections to self.state
-```
-
----
-
-## Feature Design: Stage Controller (main.py)
-
-- `Gtk.Stack` with `SLIDE_LEFT` / `SLIDE_RIGHT` transitions (220ms)
-- `_load_current_stage()` instantiates the screen and uses `GLib.idle_add` to defer
-  the `set_visible_child_name` call so GTK fully realizes the widget first
-- `_go_back()` removes and destroys the current screen from the stack before sliding
-  back, so it always rebuilds fresh (picks up any state changes like experience level)
-- All screens receive `on_next=self._advance` and `on_back=self._go_back` (or `None`
-  for Stage 0 which has no Back button)
-- Add new stages by importing the class and adding to `STAGE_CLASSES`:
-  ```python
-  STAGE_CLASSES = [
-      ("Welcome",       lambda: WelcomeScreen),
-      ("Network Setup", lambda: NetworkScreen),
-      ("Keyboard",      lambda: KeyboardScreen),   # ← add like this
-  ]
-  ```
+### Navigation behaviour
+- `_advance()` moves forward, rebuilding the next screen fresh
+- `_go_back()` slides back, destroys the current screen (so it rebuilds fresh if revisited)
+- All screens receive `on_next=self._advance` and `on_back=self._go_back` (or `None` for Stage 0)
 
 ---
 
@@ -265,40 +275,42 @@ UKI bundles kernel + initramfs + cmdline into a single signed EFI binary.
 
 ---
 
-## Stage 0 — Implementation Notes (welcome.py)
+## Implementation Notes by Stage
 
+### Stage 0 — welcome.py
 - `WelcomeScreen` extends `Gtk.Box` directly (predates BaseScreen)
 - Three `Gtk.EventBox` cards for Beginner / Intermediate / Advanced
-- Card state (hover, selected) driven entirely by CSS classes
-- Info panel text lives in `WELCOME_INFO` dict keyed by experience level string
 - `_next_called` bool guard prevents double-fire of Continue button
-- `self.connect("map", ...)` resets `_next_called` when screen becomes visible again
-  (needed for Back → re-select level → Continue to work correctly)
-- Right info panel is 300px fixed width with a ScrolledWindow around the text
 
-## Stage 1 — Implementation Notes (network.py + backend/network.py)
-
-### UI (installer/ui/network.py)
-- `NetworkScreen` extends `BaseScreen`
-- Status card shows live interface info (name, IP, type, SSID) via `get_interface_info()`
-- Connectivity check runs in a daemon thread on screen load; updates via `GLib.idle_add`
-- WiFi section: Scan button → TreeView list of networks → passphrase entry → Connect
-- "📖 Arch Wiki" labeled frame with three wiki link buttons
-- Skip button bypasses network requirement (sets `state.network_skipped = True`)
+### Stage 1 — network.py + backend/network.py
+- Status card shows live interface info via `get_interface_info()`
+- Connectivity check runs in a daemon thread on screen load
+- WiFi: Scan → TreeView list → passphrase entry → Connect via iwd
+- Skip button sets `state.network_skipped = True` and advances
 - Next button only enabled when `_connected = True`
 
-### Backend (installer/backend/network.py)
-- `check_connectivity()` — DNS resolution → TCP fallback → ping fallback
-- `get_interface_info()` — parses `ip addr`/`ip link`, enriches with `iwctl` for WiFi
-- `list_wifi_networks()` — `iwctl station <iface> scan` + `get-networks`, returns list of dicts
-- `connect_wifi(ssid, passphrase)` — `iwctl --passphrase` flag, polls for IP up to 10s
-- `disconnect_wifi()` — clean disconnection
+### Stage 2 — keyboard.py + backend/keyboard.py
+- `list_keymaps()` calls `localectl list-keymaps`; falls back to built-in list
+- `apply_keymap()` calls `loadkeys` for live preview
+- When running in a graphical session (not TTY), loadkeys fails gracefully with
+  a friendly message — works correctly on the real Arch live ISO TTY
+- `get_current_keymap()` pre-selects the active keymap on load
+- Filter model on TreeView for instant search across ~300 keymaps
 
-### Wiki viewer (installer/wiki/viewer.py)
-- `WikiViewer(Gtk.Window)` — non-modal, ~960×720
-- Tries WebKit2 4.1 then falls back to 4.0
-- No-network / no-WebKit fallback page with selectable raw URL
-- `open_wiki(url, connected)` is the public API used by all screens
+### Stage 3 — locale_screen.py + backend/locale.py
+- `list_locales()` parses `/etc/locale.gen` (all lines, commented or not)
+- UTF-8 only toggle: hidden and forced on for Beginner; shown for Intermediate/Advanced
+- Pre-selects `state.locale` if returning from a later stage
+- Saves `state.locale` and `state.language` on Next
+
+### Stage 4 — disk_select.py + backend/disk.py
+- `detect_boot_mode()` checks `/sys/firmware/efi` → 'uefi' or 'bios'
+- `list_disks()` calls `lsblk --json` and parses output
+- Each disk rendered as a clickable card (not a tree row) for clarity
+- Shows model, size, type (NVMe/SSD/HDD/USB/Virtual), existing partitions
+- Red warning shown if selected disk has existing partitions
+- Sets `state.partition_table` default: 'gpt' for UEFI, 'mbr' for BIOS
+- Refresh button re-scans drives
 
 ---
 
@@ -315,57 +327,13 @@ Key CSS classes defined:
 - `.info-panel`, `.info-panel-header`, `.info-panel-text` — right panel
 - `.screen-title`, `.screen-subtitle`, `.screen-sep` — BaseScreen title bar
 - `.nav-bar`, `.nav-btn`, `.nav-btn-next`, `.nav-btn-back` — navigation
-- `.card` — generic bordered card (status card, etc.)
-- `.action-button` — Scan / Connect / Refresh buttons
+- `.card` — generic bordered card (status card, disk cards, etc.)
+- `.disk-card`, `.disk-card-selected` — disk selection cards (Stage 4)
+- `.action-button` — Scan / Connect / Refresh / Apply buttons
 - `.wiki-frame`, `.wiki-frame-title`, `.wiki-link-button` — wiki links section
 - `.section-heading` — section labels within content
-- `.detail-key`, `.detail-value` — interface info grid
+- `.detail-key`, `.detail-value` — key/value info pairs
 - `.status-ok`, `.status-error`, `.error-label` — status/error text
-
----
-
-## Current Session Notes
-
-**Session 1 — Project bootstrap**
-- Decided on full architecture (see above)
-- Created repo skeleton, all placeholder files
-- Created CLAUDE.md, README.md, LICENSE, PKGBUILD, .gitignore
-- Created installer/main.py (entry point + window scaffold)
-- Created installer/state.py (InstallState dataclass)
-- Created installer/ui/base_screen.py (base class with info panel)
-- Created assets (SVG + PNG icon)
-
-**Session 2 — Stage 0 + architecture refinements**
-- Implemented `installer/ui/welcome.py` (WelcomeScreen)
-- Implemented `installer/assets/style.css` (dark GitHub theme, full palette)
-- Updated `installer/main.py` with Gtk.Stack stage controller and Stage 0 wired in
-- Fixed repo file structure (moved files into installer/ package layout)
-- Added Arch Wiki viewer feature (webkit2gtk, non-modal, per-screen WIKI_LINKS)
-- Added EFIStub + UKI as Advanced-tier bootloader options (Stage 13)
-- Moved Network Setup to Stage 1 (required early for wiki viewer)
-- Defined WiFi setup via iwd for Stage 1
-
-**Session 3 — Stage 1 (Network Setup) + Wiki Viewer + bug fixes**
-- Implemented `installer/ui/network.py` (NetworkScreen extending BaseScreen)
-- Implemented `installer/backend/network.py` (connectivity, iwd WiFi wrapper)
-- Implemented `installer/wiki/viewer.py` (WikiViewer, non-modal WebKit2 window)
-- Created all missing `__init__.py` files for installer, ui, backend, wiki packages
-- Fixed `WelcomeScreen` signature to accept `on_back=None` kwarg
-- Fixed `main.py` stage controller: `_go_back()`, `GLib.idle_add` for transitions,
-  destroy-on-back so screens rebuild fresh with updated state
-- Fixed double-fire bug on Continue button (`_next_called` guard + `map` signal reset)
-- Fixed `BaseScreen` `_nav_ready` guard (300ms) to prevent spurious Next clicks
-- Removed invalid GTK CSS properties (`text-transform`, `line-height`)
-- Added wiki links "📖 Arch Wiki" labeled frame with styled buttons
-- Made window resizable (default 1024×640, minimum 800×560)
-- Reduced welcome screen margins and font sizes for better density on ultrawide
-
-**Next session: Stage 2 — Keyboard Layout**
-- File: `installer/ui/keyboard.py`
-- Should extend `BaseScreen`
-- List available keymaps via `localectl list-keymaps`
-- Preview/test keymap
-- Store selection in `state.keyboard_layout`
 
 ---
 
@@ -378,10 +346,11 @@ Key CSS classes defined:
 - [ ] UKI: mkinitcpio vs dracut decision (defer until filesystem/bootloader screens)
 - [ ] Secure Boot key enrollment UI (advanced only — defer until bootloader screen)
 - [ ] webkit2gtk must be installed for wiki viewer (add to README prerequisites)
+- [ ] disk-card-selected CSS class needs adding to style.css (highlighted disk card)
 
 ---
 
-## Commit Log Summary
+## Session Commit Log
 
 | Session | Commit message                                          |
 |---------|---------------------------------------------------------|
@@ -390,3 +359,7 @@ Key CSS classes defined:
 | 2       | chore: restructure into installer/ package layout       |
 | 2       | docs: wiki viewer, EFIStub/UKI, network-early decisions |
 | 3       | feat(stage-1): network setup, wiki viewer, bug fixes    |
+| 4       | feat(stage-2): keyboard layout screen and backend       |
+| 4       | feat(stage-3): locale selection screen and backend      |
+| 4       | feat(stage-4): disk selection screen and backend        |
+| 4       | docs: update CLAUDE.md and README.md                    |
