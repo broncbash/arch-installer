@@ -1,6 +1,6 @@
 /*
  * arch-installer — style.css
- * Dark GitHub-style theme. Stage 0 additions included.
+ * Dark GitHub-style theme. Stage 0 + Stage 1 styles included.
  *
  * Colour palette (CSS-compatible references)
  *   --bg-0:      #0d1117   deepest background
@@ -30,13 +30,13 @@ window {
 }
 
 .welcome-logo {
-    font-size: 52px;
+    font-size: 40px;
     color: #58a6ff;
     margin-bottom: 12px;
 }
 
 .welcome-title {
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 700;
     color: #e6edf3;
     letter-spacing: -0.5px;
@@ -52,7 +52,7 @@ window {
     font-size: 11px;
     font-weight: 600;
     color: #8b949e;
-    text-transform: uppercase;
+    /* text-transform: uppercase; — not valid in GTK CSS */
     letter-spacing: 1.2px;
 }
 
@@ -75,7 +75,7 @@ window {
 }
 
 .card-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: #e6edf3;
 }
@@ -99,14 +99,13 @@ window {
     font-size: 11px;
     font-weight: 600;
     color: #58a6ff;
-    text-transform: uppercase;
+    /* text-transform: uppercase; — not valid in GTK CSS */
     letter-spacing: 1px;
 }
 
 .info-panel-text {
     font-size: 13px;
     color: #8b949e;
-    line-height: 1.6;
 }
 
 /* ── Navigation buttons ───────────────────────────────────────────────── */
@@ -115,10 +114,10 @@ window {
     color: #ffffff;
     border: 1px solid #388bfd;
     border-radius: 6px;
-    padding: 8px 24px;
+    padding: 6px 20px;
     font-weight: 600;
     font-size: 13px;
-    min-width: 140px;
+    min-width: 120px;
 }
 
 .next-button:hover {
@@ -127,6 +126,138 @@ window {
 
 .next-button:active {
     background-color: #1158c7;
+}
+
+.nav-bar {
+    background-color: #0d1117;
+}
+
+.nav-btn {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 6px 18px;
+    font-size: 13px;
+}
+
+.nav-btn:hover {
+    background-color: #30363d;
+    border-color: #8b949e;
+}
+
+.nav-btn-next {
+    background-color: #1f6feb;
+    color: #ffffff;
+    border-color: #388bfd;
+}
+
+.nav-btn-next:hover {
+    background-color: #388bfd;
+}
+
+/* ── Screen title / subtitle (BaseScreen) ─────────────────────────────── */
+.screen-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e6edf3;
+}
+
+.screen-subtitle {
+    font-size: 13px;
+    color: #8b949e;
+    margin-top: 2px;
+}
+
+.screen-sep {
+    background-color: #30363d;
+    min-height: 1px;
+}
+
+/* ── Section headings (within screen content) ─────────────────────────── */
+.section-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b949e;
+    margin-top: 8px;
+}
+
+/* ── Cards (status card, network list, etc.) ──────────────────────────── */
+.card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+/* ── Detail grid labels ───────────────────────────────────────────────── */
+.detail-key {
+    font-size: 12px;
+    color: #8b949e;
+}
+
+.detail-value {
+    font-size: 12px;
+    color: #e6edf3;
+}
+
+/* ── Status labels ────────────────────────────────────────────────────── */
+.status-ok {
+    color: #3fb950;
+    font-weight: 600;
+}
+
+.status-error {
+    color: #f85149;
+    font-weight: 600;
+}
+
+/* ── Error label in nav bar ───────────────────────────────────────────── */
+.error-label {
+    font-size: 12px;
+    color: #f85149;
+}
+
+/* ── Action buttons (Scan, Connect, Refresh) ──────────────────────────── */
+.action-button {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 13px;
+}
+
+.action-button:hover {
+    background-color: #30363d;
+    border-color: #8b949e;
+}
+
+/* ── Wiki reference frame ─────────────────────────────────────────────── */
+.wiki-frame {
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.wiki-frame-title {
+    color: #58a6ff;
+    font-size: 12px;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.wiki-link-button {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #58a6ff;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+.wiki-link-button:hover {
+    background-color: #21262d;
+    border-color: #58a6ff;
 }
 
 /* ── Separators ───────────────────────────────────────────────────────── */

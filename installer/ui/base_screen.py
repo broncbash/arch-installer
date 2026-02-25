@@ -11,10 +11,9 @@ Provides:
 
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Pango
+from gi.repository import Gtk, Pango, GLib
 
 from installer.state import InstallState
-
 
 class BaseScreen(Gtk.Box):
     """
@@ -47,6 +46,9 @@ class BaseScreen(Gtk.Box):
         self.state = state
         self._on_back_cb = on_back
         self._on_next_cb = on_next
+
+        self._nav_ready = False
+        GLib.timeout_add(300, self._set_nav_ready)
 
         self._build_shell()
         self.refresh_hints()
@@ -193,6 +195,8 @@ class BaseScreen(Gtk.Box):
         self.next_btn = Gtk.Button(label="Next  ▶")
         self.next_btn.get_style_context().add_class("nav-btn")
         self.next_btn.get_style_context().add_class("nav-btn-next")
+        self.next_btn.set_can_default(False)
+        self.next_btn.set_focus_on_click(False)
         self.next_btn.connect("clicked", self._on_next_clicked)
         nav.pack_end(self.next_btn, False, False, 0)
 
@@ -221,7 +225,13 @@ class BaseScreen(Gtk.Box):
         if self._on_back_cb:
             self._on_back_cb()
 
+    def _set_nav_ready(self):
+        self._nav_ready = True
+        return False  # don't repeat the timeout
+
     def _on_next_clicked(self, _btn):
+        if not self._nav_ready:
+            return
         ok, msg = self.validate()
         if not ok:
             self.error_label.set_text(f"⚠  {msg}")

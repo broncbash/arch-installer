@@ -40,7 +40,10 @@ class InstallState:
     timezone: str = "UTC"
 
     # ── Network ───────────────────────────────────────────────────────────────
-    network_ok: bool = False
+    network_ok: bool = False            # True once connectivity confirmed
+    network_connected: bool = False     # alias kept in sync by NetworkScreen
+    network_skipped: bool = False       # True if user clicked Skip
+    network_interface_info: dict = field(default_factory=dict)
 
     # ── Disk / partitions ─────────────────────────────────────────────────────
     target_disk: str = ""            # e.g. /dev/sda

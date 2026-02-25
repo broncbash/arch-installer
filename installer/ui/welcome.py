@@ -6,7 +6,6 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, Pango
 
-# Info panel text keyed by experience level
 WELCOME_INFO = {
     "beginner": (
         "Welcome to the Arch Installer!\n\n"
@@ -42,30 +41,30 @@ LEVEL_LABELS = {
 class WelcomeScreen(Gtk.Box):
     """Stage 0 — Welcome and experience-level selection."""
 
-    def __init__(self, state, on_next):
+    def __init__(self, state, on_next=None, on_back=None):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.state = state
         self.on_next = on_next
         self._selected_level = getattr(state, "experience_level", None) or "beginner"
+        self._next_called = False
 
         self._build_ui()
         self._update_info_panel()
 
-    # ------------------------------------------------------------------ build
+        # Reset the guard whenever this screen becomes visible (e.g. after Back)
+        self.connect("map", lambda _: setattr(self, "_next_called", False))
 
     def _build_ui(self):
-        # ── LEFT: main content ──────────────────────────────────────────────
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        left.set_size_request(480, -1)
+        left.set_hexpand(True)
         left.get_style_context().add_class("welcome-left")
 
-        # Logo + title block
         header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        header.set_margin_top(48)
-        header.set_margin_start(48)
-        header.set_margin_end(48)
+        header.set_margin_top(32)
+        header.set_margin_start(32)
+        header.set_margin_end(32)
 
-        logo_label = Gtk.Label(label="󰣇")          # nerd-font Arch icon (fallback: plain text)
+        logo_label = Gtk.Label(label="󰣇")
         logo_label.get_style_context().add_class("welcome-logo")
 
         title = Gtk.Label(label="Arch Linux Installer")
@@ -81,27 +80,24 @@ class WelcomeScreen(Gtk.Box):
         header.pack_start(subtitle,   False, False, 0)
         left.pack_start(header, False, False, 0)
 
-        # Divider
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep.set_margin_top(32)
         sep.set_margin_bottom(24)
-        sep.set_margin_start(48)
-        sep.set_margin_end(48)
+        sep.set_margin_start(32)
+        sep.set_margin_end(32)
         left.pack_start(sep, False, False, 0)
 
-        # Section label
         choose_lbl = Gtk.Label(label="Choose your experience level")
         choose_lbl.get_style_context().add_class("section-label")
         choose_lbl.set_halign(Gtk.Align.START)
-        choose_lbl.set_margin_start(48)
+        choose_lbl.set_margin_start(32)
         choose_lbl.set_margin_bottom(16)
         left.pack_start(choose_lbl, False, False, 0)
 
-        # Experience level cards
         self._cards = {}
         cards_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        cards_box.set_margin_start(48)
-        cards_box.set_margin_end(48)
+        cards_box.set_margin_start(32)
+        cards_box.set_margin_end(32)
 
         for level in ("beginner", "intermediate", "advanced"):
             card = self._make_level_card(level)
@@ -109,15 +105,12 @@ class WelcomeScreen(Gtk.Box):
             self._cards[level] = card
 
         left.pack_start(cards_box, False, False, 0)
-
-        # Spacer
         left.pack_start(Gtk.Box(), True, True, 0)
 
-        # Next button row
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        btn_row.set_margin_start(48)
-        btn_row.set_margin_end(48)
-        btn_row.set_margin_bottom(40)
+        btn_row.set_margin_start(32)
+        btn_row.set_margin_end(32)
+        btn_row.set_margin_bottom(24)
         btn_row.set_margin_top(16)
 
         self.next_btn = Gtk.Button(label="Continue  →")
@@ -128,30 +121,35 @@ class WelcomeScreen(Gtk.Box):
 
         left.pack_start(btn_row, False, False, 0)
 
-        # ── RIGHT: info panel ───────────────────────────────────────────────
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         right.get_style_context().add_class("info-panel")
-        right.set_size_request(340, -1)
+        right.set_size_request(300, -1)
+        right.set_hexpand(False)
 
         info_header = Gtk.Label(label="ℹ  About this level")
         info_header.get_style_context().add_class("info-panel-header")
         info_header.set_halign(Gtk.Align.START)
-        info_header.set_margin_start(28)
-        info_header.set_margin_top(32)
-        info_header.set_margin_bottom(16)
+        info_header.set_margin_start(20)
+        info_header.set_margin_top(24)
+        info_header.set_margin_bottom(12)
         right.pack_start(info_header, False, False, 0)
+
+        info_scroll = Gtk.ScrolledWindow()
+        info_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        info_scroll.set_vexpand(True)
 
         self.info_text = Gtk.Label()
         self.info_text.set_line_wrap(True)
         self.info_text.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.info_text.set_halign(Gtk.Align.START)
         self.info_text.set_valign(Gtk.Align.START)
-        self.info_text.set_margin_start(28)
-        self.info_text.set_margin_end(24)
+        self.info_text.set_margin_start(20)
+        self.info_text.set_margin_end(16)
+        self.info_text.set_margin_bottom(16)
         self.info_text.get_style_context().add_class("info-panel-text")
-        right.pack_start(self.info_text, False, False, 0)
+        info_scroll.add(self.info_text)
+        right.pack_start(info_scroll, True, True, 0)
 
-        # ── Assemble ────────────────────────────────────────────────────────
         self.pack_start(left,  True,  True,  0)
         self.pack_start(right, False, False, 0)
 
@@ -188,8 +186,6 @@ class WelcomeScreen(Gtk.Box):
 
         return card
 
-    # ----------------------------------------------------------------- state
-
     def _select_level(self, level):
         self._selected_level = level
         self._highlight_selected()
@@ -207,5 +203,9 @@ class WelcomeScreen(Gtk.Box):
         self.info_text.set_text(WELCOME_INFO[self._selected_level])
 
     def _on_next_clicked(self, _btn):
+        if self._next_called:
+            return
+        self._next_called = True
         self.state.experience_level = self._selected_level
-        self.on_next()
+        if self.on_next:
+            self.on_next()
