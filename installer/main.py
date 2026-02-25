@@ -38,7 +38,7 @@ class InstallerWindow(Gtk.Window):
 
     def __init__(self):
         super().__init__(title="Arch Linux Installer")
-        self.set_default_size(1024, 680)
+        self.set_default_size(1024, 640)
         self.set_resizable(True)
         self.set_size_request(800, 560)  # minimum size
         self.set_position(Gtk.WindowPosition.CENTER)
