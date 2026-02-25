@@ -31,7 +31,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Integrated Arch Wiki viewer** — wiki links on every screen open an in-app
   WebKit2GTK browser window, with a graceful fallback if offline
 - **Full partitioning support** — MBR/GPT, automatic layouts, manual partitioning,
-  LUKS encryption, Btrfs subvolumes *(coming soon)*
+  LUKS encryption, Btrfs subvolumes
 - **Bootloader choice** — GRUB, systemd-boot, rEFInd, EFIStub, UKI *(coming soon)*
 - **Desktop environment selection** — choose your DE/WM at install time *(coming soon)*
 - **Nothing written to disk** until you confirm the final review screen
@@ -48,8 +48,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 2 | Keyboard Layout | ✅ Complete |
 | 3 | Language / Locale | ✅ Complete |
 | 4 | Disk Selection | ✅ Complete |
-| 5 | Partition Scheme | 🔲 Planned |
-| 6 | Filesystem + Encryption | 🔲 Planned |
+| 5 | Partition Scheme | ✅ Complete |
+| 6 | Filesystem + Encryption | ✅ Complete |
 | 7 | Mirror Selection | 🔲 Planned |
 | 8 | Package Selection | 🔲 Planned |
 | 9 | Base Install (pacstrap) | 🔲 Planned |
@@ -102,12 +102,14 @@ arch-installer/
 │   │   ├── keyboard.py      # Stage 2 — Keyboard Layout
 │   │   ├── locale_screen.py # Stage 3 — Language / Locale
 │   │   ├── disk_select.py   # Stage 4 — Disk Selection
+│   │   ├── partition.py     # Stage 5 — Partition Scheme
+│   │   ├── filesystem.py    # Stage 6 — Filesystem + Encryption
 │   │   └── ...              # Remaining stages (in progress)
 │   ├── backend/
 │   │   ├── network.py       # Connectivity checks, iwd WiFi wrapper
 │   │   ├── keyboard.py      # localectl / loadkeys wrappers
 │   │   ├── locale.py        # locale.gen parser
-│   │   ├── disk.py          # lsblk wrapper, boot mode detection
+│   │   ├── disk.py          # lsblk wrapper, boot mode detection, RAM detection
 │   │   └── ...              # Disk ops, pacstrap, chroot, config (planned)
 │   ├── wiki/
 │   │   └── viewer.py        # In-app WebKit2GTK wiki viewer
@@ -118,7 +120,7 @@ arch-installer/
 ├── tests/
 ├── docs/
 ├── PKGBUILD
-└── CLAUDE.md                # Developer session continuity file
+└── CLAUDE.md                # AI session continuity file
 ```
 
 ---

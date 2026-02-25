@@ -16,6 +16,8 @@ from installer.ui.network import NetworkScreen
 from installer.ui.keyboard import KeyboardScreen
 from installer.ui.locale_screen import LocaleScreen
 from installer.ui.disk_select import DiskSelectScreen
+from installer.ui.partition import PartitionScreen
+from installer.ui.filesystem import FilesystemScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -39,6 +41,8 @@ class InstallerWindow(Gtk.Window):
         ("Keyboard",       lambda: KeyboardScreen),
         ("Locale",         lambda: LocaleScreen),
         ("Disk",           lambda: DiskSelectScreen),
+        ("Partitions",     lambda: PartitionScreen),
+        ("Filesystem",     lambda: FilesystemScreen),
     ]
 
     def __init__(self):
@@ -106,6 +110,9 @@ class InstallerWindow(Gtk.Window):
             f"Locale           : {self.state.locale}\n"
             f"Disk             : {self.state.target_disk}\n"
             f"Boot mode        : {self.state.boot_mode}\n"
+            f"Partition scheme : {self.state.partition_scheme}\n"
+            f"Filesystem       : {self.state.root_filesystem}\n"
+            f"Encryption       : {'Yes' if self.state.luks_passphrase else 'No'}\n"
             "(Next stages not yet implemented.)"
         )
         dlg.run()

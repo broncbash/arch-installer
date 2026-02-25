@@ -83,6 +83,8 @@ class InstallState:
 
     # ── Bootloader ────────────────────────────────────────────────────────────
     bootloader: str = "grub"         # 'grub' | 'systemd-boot' | 'refind'
+    bootloader_uki: bool = False     # True if UKI bootloader selected (Stage 13)
+    bootloader_uki_needs_decrypt: bool = False  # True if LUKS encryption enabled
     boot_mode: str = "uefi"          # 'uefi' | 'bios'  (auto-detected)
     efi_partition: str = ""          # e.g. /dev/sda1
 

@@ -265,3 +265,42 @@ separator {
     background-color: #30363d;
     min-height: 1px;
 }
+
+/* ── Disk selection cards (Stage 4) ───────────────────────────────────── */
+.disk-card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+.disk-card:hover {
+    background-color: #1c2128;
+    border-color: #8b949e;
+}
+
+.disk-card-selected {
+    background-color: #0c2d6b;
+    border: 2px solid #58a6ff;
+    border-radius: 6px;
+}
+
+/* ── Passphrase strength colours (Stage 6) ────────────────────────────── */
+.passphrase-weak {
+    border-color: #f85149;
+    background-color: #2d1117;
+}
+
+.passphrase-fair {
+    border-color: #d29922;
+    background-color: #2d2208;
+}
+
+.passphrase-good {
+    border-color: #3fb950;
+    background-color: #0d2d17;
+}
+
+.passphrase-strong {
+    border-color: #58a6ff;
+    background-color: #0c2040;
+}

@@ -4,10 +4,14 @@ installer/backend/disk.py
 Backend functions for disk detection and later disk operations.
 
 Stage 4 uses:
-    list_disks()      — returns info about all physical block devices
-    detect_boot_mode() — UEFI or BIOS
+    list_disks()        — returns info about all physical block devices
+    detect_boot_mode()  — UEFI or BIOS
 
-Later stages (5, 6) will use the partitioning and filesystem functions
+Stage 5 uses:
+    get_disk_size_mb()  — returns the size of a specific disk in MB
+    get_ram_mb()        — returns total system RAM in MB (for swap suggestions)
+
+Later stages (6+) will use the partitioning and filesystem functions
 that will be added here when we reach those stages.
 
 IMPORTANT: Nothing in this file writes to disk. All detection functions
@@ -25,15 +29,74 @@ log = logging.getLogger(__name__)
 def detect_boot_mode() -> str:
     """
     Detect whether the system was booted in UEFI or BIOS (legacy) mode.
-
-    UEFI systems have /sys/firmware/efi present.
-    BIOS systems do not.
-
+    UEFI systems have /sys/firmware/efi present. BIOS systems do not.
     Returns 'uefi' or 'bios'.
     """
     if os.path.exists("/sys/firmware/efi"):
         return "uefi"
     return "bios"
+
+
+def get_disk_size_mb(disk_path: str) -> int:
+    """
+    Return the total size of a disk in megabytes.
+    e.g. get_disk_size_mb('/dev/sda') → 476940
+
+    Uses lsblk to read the size. Returns 0 if the disk can't be found.
+    """
+    try:
+        result = subprocess.run(
+            ["lsblk", "--bytes", "--nodeps", "--output", "SIZE", "--noheadings",
+             disk_path],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            size_bytes = int(result.stdout.strip())
+            return size_bytes // (1024 * 1024)  # bytes → MB
+    except (FileNotFoundError, ValueError, subprocess.TimeoutExpired) as e:
+        log.warning("Could not get disk size for %s: %s", disk_path, e)
+    return 0
+
+
+def get_ram_mb() -> int:
+    """
+    Return total system RAM in megabytes.
+    Reads /proc/meminfo which is always available on Linux.
+    Returns 0 if it can't be read (shouldn't happen).
+    """
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    # Line looks like: "MemTotal:       16384000 kB"
+                    kb = int(line.split()[1])
+                    return kb // 1024   # kB → MB
+    except (OSError, ValueError, IndexError) as e:
+        log.warning("Could not read /proc/meminfo: %s", e)
+    return 0
+
+
+def suggest_swap_mb(ram_mb: int) -> int:
+    """
+    Return a sensible swap partition size in MB based on system RAM.
+    Follows common Arch/Linux conventions:
+      RAM ≤ 2GB  → swap = RAM × 2
+      RAM ≤ 8GB  → swap = RAM
+      RAM ≤ 64GB → swap = RAM / 2  (rounded to nearest 512MB)
+      RAM > 64GB → swap = 4096MB (4GB is plenty)
+    Returns 0 if RAM is 0 (unknown).
+    """
+    if ram_mb <= 0:
+        return 2048   # safe fallback
+    if ram_mb <= 2048:
+        return ram_mb * 2
+    if ram_mb <= 8192:
+        return ram_mb
+    if ram_mb <= 65536:
+        raw = ram_mb // 2
+        # Round to nearest 512MB for tidiness
+        return (raw // 512) * 512
+    return 4096
 
 
 def list_disks() -> list:
@@ -65,15 +128,11 @@ def list_disks() -> list:
     try:
         result = subprocess.run(
             [
-                "lsblk",
-                "--json",
-                "--bytes",          # sizes in bytes (easier to work with)
+                "lsblk", "--json", "--bytes",
                 "--output",
                 "NAME,SIZE,MODEL,TRAN,ROTA,RM,TYPE,FSTYPE,LABEL,MOUNTPOINT",
             ],
-            capture_output=True,
-            text=True,
-            timeout=10,
+            capture_output=True, text=True, timeout=10,
         )
 
         if result.returncode != 0:
@@ -85,18 +144,16 @@ def list_disks() -> list:
 
         disks = []
         for dev in devices:
-            # Only process whole disks, not partitions or loop devices
             if dev.get("type") not in ("disk",):
                 continue
 
-            name      = dev.get("name", "")
+            name       = dev.get("name", "")
             size_bytes = int(dev.get("size") or 0)
-            model     = (dev.get("model") or "").strip()
-            transport = (dev.get("tran") or "").lower()
-            rotational = dev.get("rota")   # "1" = HDD, "0" = SSD/NVMe
+            model      = (dev.get("model") or "").strip()
+            transport  = (dev.get("tran") or "").lower()
+            rotational = dev.get("rota")
             removable  = dev.get("rm") in (True, "1", 1)
 
-            # Work out a friendly disk type label
             if transport == "nvme":
                 disk_type = "NVMe SSD"
             elif removable or transport == "usb":
@@ -108,7 +165,6 @@ def list_disks() -> list:
             else:
                 disk_type = "Unknown"
 
-            # Parse child partitions
             partitions = []
             for child in dev.get("children", []):
                 if child.get("type") not in ("part", "md"):
@@ -123,16 +179,16 @@ def list_disks() -> list:
                 })
 
             disks.append({
-                "name":        name,
-                "path":        f"/dev/{name}",
-                "size_bytes":  size_bytes,
-                "size_human":  _bytes_to_human(size_bytes),
-                "model":       model,
-                "transport":   transport,
-                "disk_type":   disk_type,
-                "removable":   removable,
-                "partitions":  partitions,
-                "has_data":    len(partitions) > 0,
+                "name":       name,
+                "path":       f"/dev/{name}",
+                "size_bytes": size_bytes,
+                "size_human": _bytes_to_human(size_bytes),
+                "model":      model,
+                "transport":  transport,
+                "disk_type":  disk_type,
+                "removable":  removable,
+                "partitions": partitions,
+                "has_data":   len(partitions) > 0,
             })
 
         return disks
@@ -149,13 +205,12 @@ def _bytes_to_human(n: int) -> str:
     """
     Convert a byte count to a short human-readable string.
     e.g. 500107862016 → '465.8G'
-    Uses GiB/MiB (powers of 1024) which matches how lsblk normally displays sizes.
+    Uses GiB/MiB (powers of 1024) to match lsblk's display.
     """
     if n <= 0:
         return "0B"
     for unit in ("B", "K", "M", "G", "T", "P"):
         if n < 1024:
-            # Show one decimal place for tidiness
             return f"{n:.1f}{unit}" if unit != "B" else f"{n}{unit}"
         n /= 1024
     return f"{n:.1f}P"
