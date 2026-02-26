@@ -76,6 +76,7 @@ class InstallState:
     # ── System config ─────────────────────────────────────────────────────────
     hostname: str = "archlinux"
     root_password: str = ""
+    enable_ntp: bool = True          # enable systemd-timesyncd
 
     # ── Users ─────────────────────────────────────────────────────────────────
     users: List[Dict] = field(default_factory=list)

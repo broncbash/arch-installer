@@ -266,6 +266,25 @@ separator {
     min-height: 1px;
 }
 
+/* ── TreeView / list row selection ───────────────────────────────────────
+   GTK3 CSS uses :selected on the treeview itself, not on row children.
+   We use a low-opacity blue so text remains readable beneath it.         */
+
+treeview {
+    background-color: #161b22;
+    color: #e6edf3;
+}
+
+treeview:selected {
+    background-color: rgba(88, 166, 255, 0.18);
+    color: #e6edf3;
+}
+
+treeview:selected:focus {
+    background-color: rgba(88, 166, 255, 0.25);
+    color: #79c0ff;
+}
+
 /* ── Disk selection cards ─────────────────────────────────────────────── */
 .disk-card {
     background-color: #161b22;
@@ -286,15 +305,27 @@ separator {
 
 /* ── Dry-run warning banner ───────────────────────────────────────────── */
 .dry-run-banner {
-    background-color: #3d2f00;
-    border-bottom: 2px solid #d29922;
+    background-color: #3d0000;
+    border-bottom: 2px solid #f85149;
     padding: 6px 0;
     min-height: 32px;
 }
 
 .dry-run-text {
-    color: #e3b341;
+    color: #ff7b72;
     font-size: 12px;
     font-weight: bold;
     padding: 0 8px;
 }
+
+/* ── Password / passphrase strength colours ───────────────────────────── */
+.passphrase-weak   { border-color: #f85149; }
+.passphrase-fair   { border-color: #d29922; }
+.passphrase-good   { border-color: #3fb950; }
+.passphrase-strong { border-color: #58a6ff; }
+
+/* ── Password strength progress bar colours ───────────────────────────── */
+progressbar.strength-weak   progress { background-color: #f85149; }
+progressbar.strength-fair   progress { background-color: #d29922; }
+progressbar.strength-good   progress { background-color: #3fb950; }
+progressbar.strength-strong progress { background-color: #58a6ff; }

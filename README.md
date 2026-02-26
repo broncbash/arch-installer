@@ -26,20 +26,16 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 
 - **Experience levels** — Beginner, Intermediate, and Advanced modes that adjust
   available options and explanations on every screen
-- **Contextual hints** — every screen has an info panel tailored to your experience level
-- **Integrated Arch Wiki viewer** — wiki links on every screen open an in-app
-  WebKit2GTK browser, with graceful fallback if offline
-- **Full partitioning support** — MBR/GPT, automatic layouts, manual partitioning,
-  LUKS2 encryption, Btrfs subvolumes
-- **Mirror selection** — reflector integration with checkbox country picker,
-  live command display, elapsed timer, and bundled fallback mirrorlist
-- **Package selection** — DE/WM picker (GNOME, KDE, XFCE, Sway, Hyprland, Niri,
-  i3, bspwm) plus curated extras and free-form package entry
+- **Contextual hints** — every screen has an info panel tailored to your level
+- **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser
+- **Full partitioning support** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvols
+- **Mirror selection** — reflector with checkbox country picker and live log
+- **Package selection** — 9 DE/WM options plus curated extras and free-form entry
 - **Base system install** — pacstrap with live log, per-step progress, retry on error
-- **Dry-run mode** — a prominent amber banner and full simulation of all disk
-  operations so you can test safely on any machine
-- **Nothing written to disk** until you confirm — and never in dry-run mode
-- **Full install log** at `/tmp/arch-installer.log`
+- **Timezone** — searchable list with live clock preview, auto-detected default
+- **System config** — hostname validation, root password with strength indicator, NTP
+- **Dry-run mode** — red banner + full simulation so you can test safely anywhere
+- **Nothing written to disk** until confirmed — and never in dry-run mode
 
 ---
 
@@ -57,13 +53,12 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 7 | Mirror Selection | ✅ Complete |
 | 8 | Package Selection | ✅ Complete |
 | 9 | Base Install (pacstrap) | ✅ Complete |
-| 10 | Timezone | 🔲 Planned |
-| 11 | System Config / Hostname | 🔲 Planned |
+| 10 | Timezone | ✅ Complete |
+| 11 | System Config / Hostname | ✅ Complete |
 | 12 | User + Root Setup | 🔲 Planned |
 | 13 | Bootloader | 🔲 Planned |
 | 14 | Review & Confirm | 🔲 Planned |
-| 15 | Installation Progress | 🔲 Planned |
-| 16 | Complete / Reboot | 🔲 Planned |
+| 15 | Complete / Reboot | 🔲 Planned |
 
 ---
 
@@ -73,12 +68,6 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted \
                reflector sgdisk cryptsetup btrfs-progs
 ```
-
-> **reflector** is required for mirror fetching — the bundled fallback mirrorlist
-> is used automatically if it isn't installed or the network is down.
->
-> **webkit2gtk** enables the integrated Arch Wiki viewer. Without it the viewer
-> falls back to displaying the raw URL.
 
 ---
 
@@ -90,12 +79,25 @@ cd arch-installer
 python3 -m installer.main
 ```
 
-The installer starts in **dry-run mode** by default — a yellow banner is shown
-at the top of the window and no disk operations are performed. To perform a real
-install, set `dry_run = False` in `installer/state.py`.
+The installer starts in **dry-run mode** by default — a red banner is shown and
+no disk operations are performed. To perform a real install, set
+`dry_run = False` in `installer/state.py`.
 
-> You do not need `sudo` to run the UI during development. Privilege escalation
-> (via polkit/pkexec) will be added when real disk operations are wired up.
+---
+
+## Safety: Dry-Run Mode
+
+The installer ships with `dry_run = True` in `installer/state.py`. In this mode:
+
+- A **red warning banner** is shown at the top of every screen
+- All disk operations are **logged but never executed**
+- The UI behaves exactly as in a real install — progress bars fill, logs scroll
+
+To perform a real install:
+```python
+# installer/state.py
+dry_run: bool = False   # was True
+```
 
 ---
 
@@ -105,7 +107,7 @@ install, set `dry_run = False` in `installer/state.py`.
 arch-installer/
 ├── installer/
 │   ├── main.py                  # Entry point, stage controller, dry-run banner
-│   ├── state.py                 # Shared install state (passed between all screens)
+│   ├── state.py                 # Shared install state
 │   ├── ui/
 │   │   ├── base_screen.py       # Base class all screens inherit from
 │   │   ├── welcome.py           # Stage 0  — Welcome / Experience Level
@@ -118,53 +120,34 @@ arch-installer/
 │   │   ├── mirrors.py           # Stage 7  — Mirror Selection
 │   │   ├── packages.py          # Stage 8  — Package Selection
 │   │   ├── install.py           # Stage 9  — Base System Install
+│   │   ├── timezone.py          # Stage 10 — Timezone
+│   │   ├── system_config.py     # Stage 11 — System Config / Hostname
 │   │   └── ...                  # Remaining stages (planned)
 │   ├── backend/
-│   │   ├── runner.py            # safe_run() — dry-run aware subprocess wrapper
-│   │   ├── network.py           # Connectivity checks, iwd WiFi wrapper
-│   │   ├── keyboard.py          # localectl / loadkeys wrappers
+│   │   ├── runner.py            # Dry-run aware subprocess wrapper
+│   │   ├── network.py           # Connectivity, iwd WiFi
+│   │   ├── keyboard.py          # localectl / loadkeys
 │   │   ├── locale.py            # locale.gen parser
-│   │   ├── disk.py              # lsblk wrapper, boot mode detection, RAM detection
-│   │   ├── mirrors.py           # reflector wrapper, fallback mirrorlist
-│   │   └── pacstrap.py          # Full install sequence (partition→format→pacstrap→fstab)
+│   │   ├── disk.py              # lsblk, boot mode, RAM detection
+│   │   ├── mirrors.py           # reflector, fallback mirrorlist
+│   │   └── pacstrap.py          # Full install sequence
 │   ├── wiki/
 │   │   └── viewer.py            # In-app WebKit2GTK wiki viewer
 │   └── assets/
 │       ├── installer.png
 │       ├── installer.svg
 │       └── style.css            # Dark GitHub-style GTK theme
-├── tests/
-├── docs/
-├── PKGBUILD
-└── CLAUDE.md                    # AI session continuity file
-```
-
----
-
-## Safety: Dry-Run Mode
-
-The installer ships with `dry_run = True` in `installer/state.py`. In this mode:
-
-- A **amber warning banner** is shown at the top of every screen
-- The install screen begin button reads **"🧪 Begin Dry Run"**
-- All disk operations (parted, mkfs, cryptsetup, mount, pacstrap, etc.) are
-  **logged but never executed**
-- The UI behaves exactly as it would in a real install — progress bars fill,
-  logs scroll, steps complete — so you can test the full flow safely
-
-To perform a real install, change one line in `installer/state.py`:
-```python
-dry_run: bool = False   # was True
+├── CLAUDE.md
+└── README.md
 ```
 
 ---
 
 ## Design Philosophy
 
-Built as a learning project with the goal of understanding both the Arch Linux
-installation process and GTK3 application development deeply. Every design
-decision follows the Arch Wiki, and every screen is built to be understandable
-at the Beginner level while exposing full control at the Advanced level.
+Built as a learning project to understand both the Arch Linux installation
+process and GTK3 development deeply. Every screen works at the Beginner level
+while exposing full control at Advanced.
 
 ---
 

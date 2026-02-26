@@ -59,13 +59,12 @@ No Calamares. No archinstall. Completely original.
 | 7 | Mirror Selection             | ✅ Complete      | ui/mirrors.py, backend/mirrors.py                            |
 | 8 | Package Selection            | ✅ Complete      | ui/packages.py                                               |
 | 9 | Base Install (pacstrap)      | ✅ Complete      | ui/install.py, backend/pacstrap.py                           |
-|10 | Timezone                     | 🔲 Not started  |                                                              |
-|11 | System Config / Hostname     | 🔲 Not started  |                                                              |
+|10 | Timezone                     | ✅ Complete      | ui/timezone.py                                               |
+|11 | System Config / Hostname     | ✅ Complete      | ui/system_config.py                                          |
 |12 | User + Root Setup            | 🔲 Not started  |                                                              |
 |13 | Bootloader                   | 🔲 Not started  | GRUB / systemd-boot / rEFInd / EFIStub / UKI                 |
 |14 | Review & Confirm             | 🔲 Not started  | Full summary before any writes                               |
-|15 | Installation Progress        | 🔲 Not started  | (may merge with Stage 9)                                     |
-|16 | Complete / Reboot            | 🔲 Not started  |                                                              |
+|15 | Complete / Reboot            | 🔲 Not started  |                                                              |
 
 ---
 
@@ -95,12 +94,12 @@ arch-installer/
 │   │   ├── mirrors.py          ← Stage 7  ✅
 │   │   ├── packages.py         ← Stage 8  ✅
 │   │   ├── install.py          ← Stage 9  ✅
-│   │   ├── timezone.py         ← Stage 10
-│   │   ├── system_config.py    ← Stage 11
+│   │   ├── timezone.py         ← Stage 10 ✅
+│   │   ├── system_config.py    ← Stage 11 ✅
 │   │   ├── users.py            ← Stage 12
 │   │   ├── bootloader.py       ← Stage 13
 │   │   ├── review.py           ← Stage 14
-│   │   └── complete.py         ← Stage 16
+│   │   └── complete.py         ← Stage 15
 │   ├── backend/
 │   │   ├── __init__.py
 │   │   ├── runner.py           ← safe_run() dry-run wrapper ✅
@@ -123,12 +122,11 @@ arch-installer/
 ```
 
 ### State Object (installer/state.py)
-All user selections flow through a single `InstallState` dataclass.
-
 Key fields populated so far:
 - `experience_level`              — 'beginner' | 'intermediate' | 'advanced'
 - `keyboard_layout`               — e.g. 'us', 'de'
 - `locale`                        — e.g. 'en_US.UTF-8'
+- `timezone`                      — e.g. 'America/Los_Angeles'
 - `target_disk`                   — e.g. '/dev/sda'
 - `boot_mode`                     — 'uefi' | 'bios'
 - `partition_table`               — 'gpt' | 'mbr'
@@ -143,6 +141,9 @@ Key fields populated so far:
 - `display_manager`               — 'gdm'|'sddm'|'lightdm'|''
 - `base_packages`                 — always ['base','base-devel','linux','linux-firmware']
 - `extra_packages`                — user-selected extras + DE packages
+- `hostname`                      — e.g. 'my-arch-pc'
+- `root_password`                 — root account password string
+- `enable_ntp`                    — bool, default True (systemd-timesyncd)
 - `install_log`                   — running list of log lines
 - `install_complete`              — True once Stage 9 finishes
 - `dry_run`                       — **True by default** — flip to False for real installs
@@ -153,11 +154,9 @@ Key fields populated so far:
 3. Every backend function that touches disk uses `runner.run_cmd()`.
 4. Every backend function returns `(success: bool, message: str)`.
 5. All long operations run in background threads; GTK updates via `GLib.idle_add`.
-6. Logging goes to `/tmp/arch-installer.log` during install.
-7. The info panel on every screen pulls from `get_hints()` keyed by `experience_level`.
-8. Every screen defines a `WIKI_LINKS` class variable rendered automatically by BaseScreen.
-9. The wiki viewer is non-modal — users can keep it open while using the installer.
-10. **Always provide complete files** — owner is learning to code, no diffs/snippets.
+6. The info panel on every screen pulls from `get_hints()` keyed by `experience_level`.
+7. Every screen defines a `WIKI_LINKS` class variable rendered automatically by BaseScreen.
+8. **Always provide complete files** — owner is learning to code, no diffs/snippets.
 
 ---
 
@@ -177,147 +176,61 @@ All screens extend `BaseScreen(Gtk.Box)`. Constructor signature:
 BaseScreen.__init__(self, state, on_back=None, on_next=None)
 ```
 
-Subclasses set these **class variables**:
+Subclasses implement:
 ```python
-title    = "Screen Title"
-subtitle = "Optional subtitle"
-WIKI_LINKS = [("Label", "https://wiki.archlinux.org/...")]  # optional
+def build_content(self) -> Gtk.Widget   # return the left-side content widget
+def get_hints(self) -> dict             # keys: 'beginner', 'intermediate', 'advanced'
+def validate(self) -> (bool, str)       # (True,'') or (False,'error message')
+def on_next(self)                       # save selections to self.state
+def on_experience_changed(self)         # optional: react to level changes
 ```
 
-Subclasses implement these **methods**:
-```python
-def build_content(self) -> Gtk.Widget:   # return the left-side content widget
-def get_hints(self) -> dict:             # keys: 'beginner', 'intermediate', 'advanced'
-def validate(self) -> (bool, str):       # (True,'') or (False,'error message')
-def on_next(self):                       # save selections to self.state
-def on_experience_changed(self):         # optional: react to level changes
-```
-
-**IMPORTANT:** Set instance variables BEFORE calling `super().__init__()` because
-`super().__init__()` immediately calls `build_content()`.
+**IMPORTANT:** Set instance variables BEFORE calling `super().__init__()`.
 
 **IMPORTANT — GTK show_all() visibility pattern:**
-GTK's `show_all()` is called after `build_content()` returns and will override
-any `.hide()` calls made during construction. To hide widgets conditionally:
 - Queue visibility calls via `GLib.idle_add(self._apply_level_visibility)` at
-  the END of `build_content()` — this runs after `show_all()` completes.
-- Do NOT use `set_no_show_all(True)` on containers whose children need to be
-  shown later — it blocks GTK from descending into them during `show_all()`,
-  so children are never realized and `.show_all()` on the container won't work.
-- `set_no_show_all(True)` is fine for widgets that are NEVER shown by default
-  and are only shown programmatically later (e.g. spinners, error panels).
-- `_apply_level_visibility()` must `return False` when called via `GLib.idle_add`.
-
-Useful methods provided by BaseScreen:
-```python
-self.set_next_enabled(bool)    # enable/disable the Next button
-self.set_next_label(str)       # change Next button text
-self.set_back_enabled(bool)    # enable/disable Back button
-self.refresh_hints()           # re-read get_hints() and update panel
-```
+  the END of `build_content()` — runs after `show_all()` completes.
+- Do NOT add a second `GLib.idle_add` for the same function in `__init__()` —
+  it fires before `show_all()` and gets overridden, and can also fire before
+  widgets are created if `super().__init__()` hasn't been called yet.
+- Do NOT use `set_no_show_all(True)` on containers whose children need showing
+  later — blocks GTK from descending into them, children never realize.
+- `_apply_level_visibility()` must `return False` for GLib one-shot.
 
 ---
 
 ## runner.py — Dry-Run Safe Subprocess Wrapper
 
-**File:** `installer/backend/runner.py`
-
-All disk-touching commands MUST go through this module. Never call `subprocess`
-directly from backend code.
-
 ```python
 from installer.backend.runner import run_cmd, run_chroot, run_script
 
-# Run any shell command
 ok, output = run_cmd(["mkfs.ext4", "/dev/sda2"], state, "Format root partition")
-
-# Run inside arch-chroot /mnt
 ok, output = run_chroot(["locale-gen"], state, description="Generate locales")
-
-# Run a bash one-liner
 ok, output = run_script("echo 'archlinux' > /mnt/etc/hostname", state, "Set hostname")
 ```
 
-In dry_run mode: logs `[DRY RUN] <description> — $ <command>`, returns `(True, "[dry run] ...")`.
-In live mode: runs for real, captures stdout+stderr, returns `(success, output)`.
-
----
-
-## pacstrap.py — Install Sequence (Stage 9)
-
-**File:** `installer/backend/pacstrap.py`
-
-Seven steps executed in order by `InstallScreen`:
-
-| Step ID      | What it does                                              |
-|--------------|-----------------------------------------------------------|
-| partition    | sgdisk (GPT) or parted (MBR) — create partition table     |
-| format       | mkfs.vfat / mkfs.ext4 / mkfs.btrfs / mkfs.xfs / mkswap   |
-| luks         | cryptsetup luksFormat + open (skipped if no passphrase)   |
-| mount        | mount all partitions under /mnt (btrfs subvols if needed) |
-| mirrorlist   | write state.mirrorlist to /mnt/etc/pacman.d/mirrorlist    |
-| pacstrap     | pacstrap -K /mnt <all packages> (30 min timeout)          |
-| fstab        | genfstab -U /mnt >> /mnt/etc/fstab                        |
-
-API: `run_step(step_id, state) → (success, output)`
-Also: `build_package_list(state) → list` — used by summary page to show packages.
-
----
-
-## Feature Design Notes
-
-### Dry-Run Mode
-- `state.dry_run = True` by default in state.py
-- Amber banner shown at top of window via main.py when dry_run is active
-- Install screen begin button reads "🧪 Begin Dry Run"
-- All `run_cmd()` calls return success without executing
-- Safe to run on any machine including the development machine
-
-### Mirror Selection (Stage 7)
-- Country list: checkbox TreeView, United States first and pre-checked
-- `set_activate_on_single_click(True)` must NOT be used — double-fires and
-  un-checks the pre-selected country. Use `button-press-event` on name column.
-- Visibility of advanced options deferred via `GLib.idle_add` (see pattern above)
-- reflector runs in background thread, pulse timer ticks elapsed seconds
-- Falls back to bundled FALLBACK_MIRRORLIST if reflector fails
-
-### Package Selection (Stage 8)
-- 9 DE/WM options in a FlowBox (wraps automatically): None, GNOME, KDE Plasma,
-  XFCE, Sway, Hyprland, Niri, i3, bspwm
-- Each DE sets state.display_manager automatically (gdm/sddm/lightdm/'')
-- Curated extras: 7 groups, ~45 options (Web, Media, Office, Dev, System, Gaming, Fonts)
-- Advanced: free-form package entry with removable chip tags
-- Extras section is scrollable (200-260px height) to avoid overflow
-
-### Base Install (Stage 9)
-- Two-phase screen: summary → live install (Gtk.Stack crossfade)
-- Summary shows: steps list, config recap, full package list, dry-run notice
-- Install page: per-step icons (○→⏳→✅/❌), progress bar, scrolling monospace log
-- Background thread calls run_step() for each of 7 steps
-- On error: Retry (resume from failed step) and Abort (back to summary) buttons
-- On complete: state.install_complete = True, Next enabled
-
-### Disk Selection (Stage 4)
-- Cards use `.disk-card` and `.disk-card-selected` CSS classes
-- Both MUST be defined in style.css — they are not aliases of `.card`
-- `.disk-card-selected` uses blue border (#58a6ff) matching level-card.selected
-
-### Bootloader Options (Stage 13, planned)
-| Bootloader     | Beginner | Intermediate | Advanced |
-|----------------|----------|--------------|----------|
-| GRUB           | ✅        | ✅            | ✅        |
-| systemd-boot   | ✅        | ✅            | ✅        |
-| rEFInd         | ❌        | ✅            | ✅        |
-| EFIStub        | ❌        | ❌            | ✅        |
-| UKI            | ❌        | ❌            | ✅        |
+In dry_run mode: logs `[DRY RUN]` and returns `(True, "[dry run] ...")`.
 
 ---
 
 ## CSS Notes (installer/assets/style.css)
 
-GTK CSS limitations vs web CSS:
-- `text-transform: uppercase` — NOT valid
-- `line-height` — NOT valid
+GTK CSS limitations: no `text-transform`, no `line-height`, no descendant
+class matching on widget children (e.g. `progressbar.foo progress` doesn't work).
+
+For progress bar colors, use `override_background_color()` in Python directly:
+```python
+from gi.repository import Gdk
+color = Gdk.RGBA(0.247, 0.722, 0.314, 1)  # green
+self._bar.override_background_color(Gtk.StateFlags.NORMAL, color)
+```
+
+TreeView row selection — use `treeview:selected` (GTK3), NOT `treeview row:selected`
+(GTK4 syntax). Low-opacity rgba keeps text readable:
+```css
+treeview:selected       { background-color: rgba(88, 166, 255, 0.18); }
+treeview:selected:focus { background-color: rgba(88, 166, 255, 0.25); }
+```
 
 Key CSS classes:
 - `.level-card`, `.level-card.selected`, `.level-card.hover` — experience + DE/WM cards
@@ -328,11 +241,57 @@ Key CSS classes:
 - `.nav-bar`, `.nav-btn`, `.nav-btn-next` — navigation
 - `.action-button` — Fetch / Connect / Retry etc buttons
 - `.wiki-frame`, `.wiki-link-button` — wiki links section
-- `.section-heading` — section labels within content
-- `.detail-key`, `.detail-value` — info grid labels
+- `.section-heading`, `.detail-key`, `.detail-value` — content labels
 - `.status-ok`, `.status-error`, `.error-label` — status/error text
-- `.passphrase-weak/fair/good/strong` — LUKS passphrase strength colours
-- `.dry-run-banner`, `.dry-run-text` — amber dry-run warning banner
+- `.passphrase-weak/fair/good/strong` — entry border colours (LUKS + root pw)
+- `.dry-run-banner`, `.dry-run-text` — red dry-run warning banner
+
+---
+
+## Feature Design Notes
+
+### Dry-Run Mode
+- `state.dry_run = True` by default
+- Red banner at top of window when active
+- Install screen begin button reads "🧪 Begin Dry Run"
+- All `run_cmd()` calls return success without executing
+
+### Package Selection (Stage 8)
+- 9 DE/WM options in FlowBox: None, GNOME, KDE, XFCE, Sway, Hyprland, Niri, i3, bspwm
+- Each DE sets state.display_manager automatically
+- Curated extras: 7 groups ~45 options; Advanced adds free-form package entry
+
+### Base Install (Stage 9)
+- Two-phase: summary page → live install (Gtk.Stack crossfade)
+- 7 steps: partition → format → luks → mount → mirrorlist → pacstrap → fstab
+- Background thread, per-step icons ○→⏳→✅/❌, retry on error
+
+### Disk Selection (Stage 4)
+- `.disk-card` and `.disk-card-selected` MUST be defined in style.css explicitly
+
+### Timezone (Stage 10)
+- Loads zones from /usr/share/zoneinfo, falls back to built-in list
+- Auto-detects default from state.locale via LOCALE_TO_TZ map
+- Live clock preview updates every second via GLib.timeout_add(1000)
+- Clock timer cleaned up in destroy() to prevent leaks
+- Intermediate+: shows zoneinfo path and UTC offset detail row
+
+### System Config (Stage 11)
+- Hostname: RFC 1123 validated live, ✓/✗ inline indicator
+- Root password: strength bar with override_background_color() colors
+  (red=weak, yellow=fair, green=good, blue=strong), show/hide toggle
+- NTP checkbox: shown for Intermediate and Advanced only
+- Advanced: live /etc/hostname + /etc/hosts file preview
+- state.enable_ntp added to state.py (default True)
+
+### Bootloader Options (Stage 13, planned)
+| Bootloader     | Beginner | Intermediate | Advanced |
+|----------------|----------|--------------|----------|
+| GRUB           | ✅        | ✅            | ✅        |
+| systemd-boot   | ✅        | ✅            | ✅        |
+| rEFInd         | ❌        | ✅            | ✅        |
+| EFIStub        | ❌        | ❌            | ✅        |
+| UKI            | ❌        | ❌            | ✅        |
 
 ---
 
@@ -363,17 +322,21 @@ Key CSS classes:
 | 6       | docs: update CLAUDE.md and README.md                                  |
 | 7       | feat(stage-8): package selection — DE/WM picker + curated extras      |
 | 7       | feat(stage-9): base system install with dry-run safety mode           |
-| 7       | feat(safety): dry-run mode, runner.py, amber banner                   |
-| 7       | fix(style): add disk-card CSS classes, dry-run banner styles          |
+| 7       | feat(safety): dry-run mode, runner.py, amber→red banner               |
+| 7       | fix(style): disk-card CSS, treeview selection, dry-run banner         |
 | 7       | docs: update CLAUDE.md and README.md                                  |
+| 8       | feat(stage-10): timezone selection with live clock preview            |
+| 8       | feat(stage-11): system config — hostname, root password, NTP          |
+| 8       | fix(system-config): password strength bar colors, NTP checkbox        |
+| 8       | docs: update CLAUDE.md and README.md                                  |
 
 ---
 
-## Next Session: Stage 10 — Timezone
+## Next Session: Stage 12 — User Setup
 
-- File: `installer/ui/timezone.py`
-- Interactive map or scrollable list to pick timezone
-- Auto-detect from locale/IP as default suggestion
-- Sets `state.timezone` (e.g. 'America/Los_Angeles')
-- Backend: `run_chroot(["ln", "-sf", ...], state)` to set /etc/localtime
+- File: `installer/ui/users.py`
+- Beginner: single user — username, password + confirm, sudo toggle
+- Intermediate: same + shell picker (bash/zsh/fish)
+- Advanced: same + ability to add multiple users, each with own settings
+- Saves to `state.users` list of dicts
 - Upload `main.py` and `state.py` at start of next session
