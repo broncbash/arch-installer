@@ -20,9 +20,9 @@ No Calamares. No archinstall. Completely original.
   - Advanced: full control, all options, technical detail
 - Every screen has an info/hint panel that adapts to the selected experience level
 - Every screen has wiki links that open an in-app wiki viewer
-- GTK3 + Python
-- Dark GitHub-style theme
+- GTK3 + Python, dark GitHub-style theme
 - polkit / pkexec for privilege escalation where needed
+- **Dry-run mode on by default** — set `dry_run = False` in state.py for real installs
 - **This is a learning project — owner is not a coder. Always provide complete
   files, never diffs or partial snippets. Plain-English explanations alongside code.**
 
@@ -37,6 +37,7 @@ No Calamares. No archinstall. Completely original.
 | Wiki viewer      | WebKit2GTK (webkit2gtk pkg)   |
 | Privilege        | pkexec (polkit)               |
 | Disk ops         | parted, sgdisk, mkfs.* tools  |
+| Encryption       | cryptsetup (LUKS2)            |
 | Install engine   | pacstrap                      |
 | Chroot ops       | arch-chroot subprocess calls  |
 | VCS              | Git → GitLab (private)        |
@@ -46,24 +47,24 @@ No Calamares. No archinstall. Completely original.
 
 ## Installer Stage Map
 
-| # | Stage                        | Status          | Notes                                                        |
+| # | Stage                        | Status          | Files                                                        |
 |---|------------------------------|-----------------|--------------------------------------------------------------|
-| 0 | Welcome / Experience Level   | ✅ Complete      | welcome.py, main.py, style.css                               |
-| 1 | Network Setup                | ✅ Complete      | network.py (UI+backend), wiki viewer                         |
-| 2 | Keyboard Layout              | ✅ Complete      | keyboard.py (UI+backend)                                     |
-| 3 | Language / Locale            | ✅ Complete      | locale_screen.py, backend/locale.py                          |
-| 4 | Disk Selection               | ✅ Complete      | disk_select.py, backend/disk.py (partial)                    |
-| 5 | Partition Scheme             | ✅ Complete      | partition.py (auto + manual modes)                           |
-| 6 | Filesystem + Encryption      | ✅ Complete      | filesystem.py (ext4/btrfs/xfs/f2fs, LUKS, Btrfs subvols)    |
-| 7 | Mirror Selection             | ✅ Complete      | mirrors.py UI + backend/mirrors.py                           |
-| 8 | Package Selection            | 🔲 Not started  | base, DE, extras                                             |
-| 9 | Base Install (pacstrap)      | 🔲 Not started  | Live progress bar                                            |
+| 0 | Welcome / Experience Level   | ✅ Complete      | ui/welcome.py                                                |
+| 1 | Network Setup                | ✅ Complete      | ui/network.py, backend/network.py                            |
+| 2 | Keyboard Layout              | ✅ Complete      | ui/keyboard.py, backend/keyboard.py                          |
+| 3 | Language / Locale            | ✅ Complete      | ui/locale_screen.py, backend/locale.py                       |
+| 4 | Disk Selection               | ✅ Complete      | ui/disk_select.py, backend/disk.py                           |
+| 5 | Partition Scheme             | ✅ Complete      | ui/partition.py                                              |
+| 6 | Filesystem + Encryption      | ✅ Complete      | ui/filesystem.py                                             |
+| 7 | Mirror Selection             | ✅ Complete      | ui/mirrors.py, backend/mirrors.py                            |
+| 8 | Package Selection            | ✅ Complete      | ui/packages.py                                               |
+| 9 | Base Install (pacstrap)      | ✅ Complete      | ui/install.py, backend/pacstrap.py                           |
 |10 | Timezone                     | 🔲 Not started  |                                                              |
 |11 | System Config / Hostname     | 🔲 Not started  |                                                              |
 |12 | User + Root Setup            | 🔲 Not started  |                                                              |
 |13 | Bootloader                   | 🔲 Not started  | GRUB / systemd-boot / rEFInd / EFIStub / UKI                 |
 |14 | Review & Confirm             | 🔲 Not started  | Full summary before any writes                               |
-|15 | Installation Progress        | 🔲 Not started  | Live log + progress                                          |
+|15 | Installation Progress        | 🔲 Not started  | (may merge with Stage 9)                                     |
 |16 | Complete / Reboot            | 🔲 Not started  |                                                              |
 
 ---
@@ -77,12 +78,9 @@ arch-installer/
 ├── README.md
 ├── PKGBUILD
 ├── LICENSE
-├── arch-installer.desktop
-├── docs/
-│   └── design-notes.md
 ├── installer/
 │   ├── __init__.py
-│   ├── main.py                 ← Entry point, stage controller ✅
+│   ├── main.py                 ← Entry point, stage controller, dry-run banner ✅
 │   ├── state.py                ← Global install state object ✅
 │   ├── ui/
 │   │   ├── __init__.py
@@ -95,72 +93,71 @@ arch-installer/
 │   │   ├── partition.py        ← Stage 5  ✅
 │   │   ├── filesystem.py       ← Stage 6  ✅
 │   │   ├── mirrors.py          ← Stage 7  ✅
-│   │   ├── packages.py         ← Stage 8
+│   │   ├── packages.py         ← Stage 8  ✅
+│   │   ├── install.py          ← Stage 9  ✅
 │   │   ├── timezone.py         ← Stage 10
 │   │   ├── system_config.py    ← Stage 11
 │   │   ├── users.py            ← Stage 12
 │   │   ├── bootloader.py       ← Stage 13
 │   │   ├── review.py           ← Stage 14
-│   │   ├── progress.py         ← Stage 15
 │   │   └── complete.py         ← Stage 16
 │   ├── backend/
 │   │   ├── __init__.py
+│   │   ├── runner.py           ← safe_run() dry-run wrapper ✅
 │   │   ├── network.py          ← connectivity checks, iwd wrapper ✅
 │   │   ├── keyboard.py         ← localectl / loadkeys wrappers ✅
 │   │   ├── locale.py           ← locale.gen parser ✅
 │   │   ├── disk.py             ← lsblk wrapper, boot mode, RAM detection ✅
 │   │   ├── mirrors.py          ← reflector wrapper, fallback mirrorlist ✅
-│   │   ├── filesystem.py       ← mkfs.*, mount/umount helpers (planned)
-│   │   ├── pacstrap.py         ← pacstrap runner (planned)
+│   │   ├── pacstrap.py         ← full install sequence ✅
 │   │   ├── chroot.py           ← arch-chroot runner (planned)
 │   │   ├── bootloader.py       ← bootloader install logic (planned)
 │   │   └── config.py           ← fstab, mkinitcpio, etc. (planned)
 │   ├── wiki/
-│   │   ├── __init__.py
 │   │   └── viewer.py           ← WebKit2GTK wiki viewer ✅
 │   └── assets/
 │       ├── installer.svg
 │       ├── installer.png
 │       └── style.css           ← Shared GTK CSS ✅
 └── tests/
-    └── test_disk.py
 ```
 
 ### State Object (installer/state.py)
 All user selections flow through a single `InstallState` dataclass.
-No screen writes to disk until Stage 14 (Review & Confirm) is accepted.
 
 Key fields populated so far:
 - `experience_level`              — 'beginner' | 'intermediate' | 'advanced'
-- `keyboard_layout`               — console keymap e.g. 'us', 'de'
+- `keyboard_layout`               — e.g. 'us', 'de'
 - `locale`                        — e.g. 'en_US.UTF-8'
-- `language`                      — same as locale (LANG=)
 - `target_disk`                   — e.g. '/dev/sda'
-- `boot_mode`                     — 'uefi' | 'bios' (auto-detected Stage 4)
-- `partition_table`               — 'gpt' | 'mbr' (defaulted Stage 4)
+- `boot_mode`                     — 'uefi' | 'bios'
+- `partition_table`               — 'gpt' | 'mbr'
 - `partition_scheme`              — 'auto' | 'manual'
 - `partitions`                    — list of DiskPartition objects
-- `swap_size_mb`                  — 0 = no swap partition
-- `use_swap_file`                 — True if swap file chosen
 - `root_filesystem`               — 'ext4' | 'btrfs' | 'xfs' | 'f2fs'
 - `btrfs_subvolumes`              — True if standard @ subvolume layout wanted
 - `luks_passphrase`               — empty string = no encryption
-- `bootloader_uki`                — True if UKI bootloader selected (Stage 13)
-- `bootloader_uki_needs_decrypt`  — True if LUKS enabled (affects initramfs)
 - `mirror_countries`              — list of reflector country name strings
 - `mirrorlist`                    — final mirrorlist file content string
-- `network_ok`                    — bool
-- `network_skipped`               — bool
+- `desktop_environment`           — 'gnome'|'kde'|'xfce'|'sway'|'hyprland'|'niri'|'i3'|'bspwm'|''
+- `display_manager`               — 'gdm'|'sddm'|'lightdm'|''
+- `base_packages`                 — always ['base','base-devel','linux','linux-firmware']
+- `extra_packages`                — user-selected extras + DE packages
+- `install_log`                   — running list of log lines
+- `install_complete`              — True once Stage 9 finishes
+- `dry_run`                       — **True by default** — flip to False for real installs
 
 ### Key Design Rules
 1. **Nothing is written to disk until the user confirms on the Review screen.**
-2. Every backend function returns `(success: bool, message: str)`.
-3. All long operations run in background threads; GTK updates via `GLib.idle_add`.
-4. Logging goes to `/tmp/arch-installer.log` during install.
-5. The info panel on every screen pulls from `get_hints()` keyed by `experience_level`.
-6. Every screen defines a `WIKI_LINKS` class variable rendered automatically by BaseScreen.
-7. The wiki viewer is non-modal — users can keep it open while using the installer.
-8. **Always provide complete files** — owner is learning to code, no diffs/snippets.
+2. **`dry_run = True` by default** — all disk ops are simulated via runner.py.
+3. Every backend function that touches disk uses `runner.run_cmd()`.
+4. Every backend function returns `(success: bool, message: str)`.
+5. All long operations run in background threads; GTK updates via `GLib.idle_add`.
+6. Logging goes to `/tmp/arch-installer.log` during install.
+7. The info panel on every screen pulls from `get_hints()` keyed by `experience_level`.
+8. Every screen defines a `WIKI_LINKS` class variable rendered automatically by BaseScreen.
+9. The wiki viewer is non-modal — users can keep it open while using the installer.
+10. **Always provide complete files** — owner is learning to code, no diffs/snippets.
 
 ---
 
@@ -199,12 +196,17 @@ def on_experience_changed(self):         # optional: react to level changes
 **IMPORTANT:** Set instance variables BEFORE calling `super().__init__()` because
 `super().__init__()` immediately calls `build_content()`.
 
-**IMPORTANT:** GTK's `show_all()` is called after `build_content()` returns and will
-override any `.hide()` calls made during construction. To hide widgets on load,
-defer visibility calls using `GLib.idle_add(self._apply_visibility)` from inside
-`build_content()` — this runs after `show_all()` completes. Widgets that should
-never be shown by `show_all()` (e.g. spinners, result panels) use
-`widget.set_no_show_all(True)` instead.
+**IMPORTANT — GTK show_all() visibility pattern:**
+GTK's `show_all()` is called after `build_content()` returns and will override
+any `.hide()` calls made during construction. To hide widgets conditionally:
+- Queue visibility calls via `GLib.idle_add(self._apply_level_visibility)` at
+  the END of `build_content()` — this runs after `show_all()` completes.
+- Do NOT use `set_no_show_all(True)` on containers whose children need to be
+  shown later — it blocks GTK from descending into them during `show_all()`,
+  so children are never realized and `.show_all()` on the container won't work.
+- `set_no_show_all(True)` is fine for widgets that are NEVER shown by default
+  and are only shown programmatically later (e.g. spinners, error panels).
+- `_apply_level_visibility()` must `return False` when called via `GLib.idle_add`.
 
 Useful methods provided by BaseScreen:
 ```python
@@ -216,14 +218,98 @@ self.refresh_hints()           # re-read get_hints() and update panel
 
 ---
 
-## Adding a New Stage
+## runner.py — Dry-Run Safe Subprocess Wrapper
 
-1. Create `installer/ui/<name>.py` extending `BaseScreen`
-2. Create `installer/backend/<name>.py` if backend logic is needed
-3. In `installer/main.py`:
-   - Add import at top
-   - Add entry to `STAGE_CLASSES` list
-   - Add field to `_show_end_dialog` summary (during development)
+**File:** `installer/backend/runner.py`
+
+All disk-touching commands MUST go through this module. Never call `subprocess`
+directly from backend code.
+
+```python
+from installer.backend.runner import run_cmd, run_chroot, run_script
+
+# Run any shell command
+ok, output = run_cmd(["mkfs.ext4", "/dev/sda2"], state, "Format root partition")
+
+# Run inside arch-chroot /mnt
+ok, output = run_chroot(["locale-gen"], state, description="Generate locales")
+
+# Run a bash one-liner
+ok, output = run_script("echo 'archlinux' > /mnt/etc/hostname", state, "Set hostname")
+```
+
+In dry_run mode: logs `[DRY RUN] <description> — $ <command>`, returns `(True, "[dry run] ...")`.
+In live mode: runs for real, captures stdout+stderr, returns `(success, output)`.
+
+---
+
+## pacstrap.py — Install Sequence (Stage 9)
+
+**File:** `installer/backend/pacstrap.py`
+
+Seven steps executed in order by `InstallScreen`:
+
+| Step ID      | What it does                                              |
+|--------------|-----------------------------------------------------------|
+| partition    | sgdisk (GPT) or parted (MBR) — create partition table     |
+| format       | mkfs.vfat / mkfs.ext4 / mkfs.btrfs / mkfs.xfs / mkswap   |
+| luks         | cryptsetup luksFormat + open (skipped if no passphrase)   |
+| mount        | mount all partitions under /mnt (btrfs subvols if needed) |
+| mirrorlist   | write state.mirrorlist to /mnt/etc/pacman.d/mirrorlist    |
+| pacstrap     | pacstrap -K /mnt <all packages> (30 min timeout)          |
+| fstab        | genfstab -U /mnt >> /mnt/etc/fstab                        |
+
+API: `run_step(step_id, state) → (success, output)`
+Also: `build_package_list(state) → list` — used by summary page to show packages.
+
+---
+
+## Feature Design Notes
+
+### Dry-Run Mode
+- `state.dry_run = True` by default in state.py
+- Amber banner shown at top of window via main.py when dry_run is active
+- Install screen begin button reads "🧪 Begin Dry Run"
+- All `run_cmd()` calls return success without executing
+- Safe to run on any machine including the development machine
+
+### Mirror Selection (Stage 7)
+- Country list: checkbox TreeView, United States first and pre-checked
+- `set_activate_on_single_click(True)` must NOT be used — double-fires and
+  un-checks the pre-selected country. Use `button-press-event` on name column.
+- Visibility of advanced options deferred via `GLib.idle_add` (see pattern above)
+- reflector runs in background thread, pulse timer ticks elapsed seconds
+- Falls back to bundled FALLBACK_MIRRORLIST if reflector fails
+
+### Package Selection (Stage 8)
+- 9 DE/WM options in a FlowBox (wraps automatically): None, GNOME, KDE Plasma,
+  XFCE, Sway, Hyprland, Niri, i3, bspwm
+- Each DE sets state.display_manager automatically (gdm/sddm/lightdm/'')
+- Curated extras: 7 groups, ~45 options (Web, Media, Office, Dev, System, Gaming, Fonts)
+- Advanced: free-form package entry with removable chip tags
+- Extras section is scrollable (200-260px height) to avoid overflow
+
+### Base Install (Stage 9)
+- Two-phase screen: summary → live install (Gtk.Stack crossfade)
+- Summary shows: steps list, config recap, full package list, dry-run notice
+- Install page: per-step icons (○→⏳→✅/❌), progress bar, scrolling monospace log
+- Background thread calls run_step() for each of 7 steps
+- On error: Retry (resume from failed step) and Abort (back to summary) buttons
+- On complete: state.install_complete = True, Next enabled
+
+### Disk Selection (Stage 4)
+- Cards use `.disk-card` and `.disk-card-selected` CSS classes
+- Both MUST be defined in style.css — they are not aliases of `.card`
+- `.disk-card-selected` uses blue border (#58a6ff) matching level-card.selected
+
+### Bootloader Options (Stage 13, planned)
+| Bootloader     | Beginner | Intermediate | Advanced |
+|----------------|----------|--------------|----------|
+| GRUB           | ✅        | ✅            | ✅        |
+| systemd-boot   | ✅        | ✅            | ✅        |
+| rEFInd         | ❌        | ✅            | ✅        |
+| EFIStub        | ❌        | ❌            | ✅        |
+| UKI            | ❌        | ❌            | ✅        |
 
 ---
 
@@ -233,118 +319,20 @@ GTK CSS limitations vs web CSS:
 - `text-transform: uppercase` — NOT valid
 - `line-height` — NOT valid
 
-Key CSS classes defined:
-- `.welcome-*` — welcome screen specific
-- `.level-card`, `.level-card.selected`, `.level-card.hover` — experience cards
+Key CSS classes:
+- `.level-card`, `.level-card.selected`, `.level-card.hover` — experience + DE/WM cards
+- `.disk-card`, `.disk-card-selected` — disk selection cards (Stage 4)
+- `.card` — generic bordered card
 - `.info-panel`, `.info-panel-header`, `.info-panel-text` — right panel
 - `.screen-title`, `.screen-subtitle`, `.screen-sep` — BaseScreen title bar
 - `.nav-bar`, `.nav-btn`, `.nav-btn-next` — navigation
-- `.card` — generic bordered card
-- `.disk-card`, `.disk-card-selected` — disk selection cards (Stage 4)
-- `.action-button` — Scan / Connect / Refresh / Fetch buttons
-- `.wiki-frame`, `.wiki-frame-title`, `.wiki-link-button` — wiki links section
+- `.action-button` — Fetch / Connect / Retry etc buttons
+- `.wiki-frame`, `.wiki-link-button` — wiki links section
 - `.section-heading` — section labels within content
 - `.detail-key`, `.detail-value` — info grid labels
 - `.status-ok`, `.status-error`, `.error-label` — status/error text
-- `.passphrase-weak`, `.passphrase-fair`, `.passphrase-good`, `.passphrase-strong`
-  — LUKS passphrase entry border/background colours (red→amber→green→blue)
-
----
-
-## Feature Design: Arch Wiki Viewer
-
-- File: `installer/wiki/viewer.py`
-- Public API: `open_wiki(url, connected)` — opens a non-modal `WikiViewer` window
-- Tries WebKit2 4.1 then falls back to 4.0
-- No-network / no-WebKit fallback page with selectable raw URL
-- BaseScreen calls it automatically when wiki link buttons are clicked
-
----
-
-## Feature Design: Mirror Selection (Stage 7)
-
-- UI: `installer/ui/mirrors.py`
-- Backend: `installer/backend/mirrors.py`
-- Country list uses `Gtk.ListStore` with `CellRendererToggle` checkboxes
-- United States is always first in the list and pre-checked by default
-- Locale detection overrides default if country is in LOCALE_TO_COUNTRY dict
-- `set_activate_on_single_click(True)` must NOT be used — it double-fires and
-  un-checks the pre-selected country. Use `button-press-event` on the name column instead.
-- Visibility of options (num mirrors, protocol, sort, age) deferred via
-  `GLib.idle_add` so they run after `show_all()` — otherwise show_all overrides hides.
-- reflector runs in a background thread; UI updates via `GLib.idle_add`
-- Pulse timer ticks every second showing elapsed time while reflector runs
-- Falls back to bundled `FALLBACK_MIRRORLIST` if reflector fails or isn't installed
-- Saves to `state.mirrorlist` and `state.mirror_countries`
-
----
-
-## Feature Design: Bootloader Options (Stage 13)
-
-| Bootloader     | Beginner | Intermediate | Advanced | Notes                                      |
-|----------------|----------|--------------|----------|--------------------------------------------|
-| GRUB           | ✅        | ✅            | ✅        | Default. BIOS + UEFI. Most compatible.     |
-| systemd-boot   | ✅        | ✅            | ✅        | Simple. UEFI only. Clean installs.         |
-| rEFInd         | ❌        | ✅            | ✅        | Graphical. UEFI only. Auto-detects kernels.|
-| EFIStub        | ❌        | ❌            | ✅        | Kernel boots directly via UEFI. No loader. |
-| UKI            | ❌        | ❌            | ✅        | Unified Kernel Image. Secure Boot friendly.|
-
-UKI note: if selected, `state.bootloader_uki = True` influences mkinitcpio config.
-If LUKS also enabled, `state.bootloader_uki_needs_decrypt = True`.
-
----
-
-## Implementation Notes by Stage
-
-### Stage 0 — welcome.py
-- `WelcomeScreen` extends `Gtk.Box` directly (predates BaseScreen)
-- Three `Gtk.EventBox` cards for Beginner / Intermediate / Advanced
-- `_next_called` bool guard prevents double-fire of Continue button
-
-### Stage 1 — network.py + backend/network.py
-- Connectivity check runs in a daemon thread on screen load
-- WiFi: Scan → TreeView list → passphrase entry → Connect via iwd
-- Skip button sets `state.network_skipped = True` and advances
-- Next only enabled when connected = True
-
-### Stage 2 — keyboard.py + backend/keyboard.py
-- `list_keymaps()` calls `localectl list-keymaps`; falls back to built-in list
-- `apply_keymap()` calls `loadkeys` for live preview (graceful fail in GUI session)
-- Filter model on TreeView for instant search across ~300 keymaps
-
-### Stage 3 — locale_screen.py + backend/locale.py
-- `list_locales()` parses `/etc/locale.gen`
-- UTF-8 only toggle: hidden/forced on for Beginner; shown for Intermediate/Advanced
-- Saves `state.locale` and `state.language`
-
-### Stage 4 — disk_select.py + backend/disk.py
-- `detect_boot_mode()` checks `/sys/firmware/efi`
-- `list_disks()` calls `lsblk --json`
-- Each disk is a clickable EventBox card with `.disk-card-selected` CSS on click
-- Sets `state.partition_table` default: 'gpt' for UEFI, 'mbr' for BIOS
-
-### Stage 5 — partition.py + backend/disk.py additions
-- Auto mode: EFI (UEFI, 512MB vfat) + optional swap + root (rest)
-- Manual mode: editable TreeView; Beginner sees it greyed out
-- `get_disk_size_mb()`, `get_ram_mb()`, `suggest_swap_mb()` added to backend/disk.py
-- Saves list of `DiskPartition` objects to `state.partitions`
-
-### Stage 6 — filesystem.py
-- Root filesystem: ext4 (all), btrfs/xfs (Intermediate+), f2fs (Advanced)
-- Btrfs subvolume section shown when btrfs selected and level > Beginner
-- LUKS: master toggle → passphrase + confirm; live strength colouring on entry widget
-- Sets `state.bootloader_uki_needs_decrypt = True` when encryption enabled
-- Updates `p.encrypt` and `p.filesystem` on root partition in state.partitions
-
-### Stage 7 — mirrors.py + backend/mirrors.py
-- Country list: checkbox TreeView, United States first and pre-checked
-- Beginner: country + Fetch button only
-- Intermediate: adds number of mirrors dropdown
-- Advanced: adds protocol, sort method, age limit
-- Fetch runs reflector in background thread with elapsed-second pulse timer
-- Shows exact reflector command that was run (selectable text)
-- Falls back to bundled mirrorlist on failure
-- Saves `state.mirrorlist` and `state.mirror_countries`
+- `.passphrase-weak/fair/good/strong` — LUKS passphrase strength colours
+- `.dry-run-banner`, `.dry-run-text` — amber dry-run warning banner
 
 ---
 
@@ -354,6 +342,7 @@ If LUKS also enabled, `state.bootloader_uki_needs_decrypt = True`.
 - [ ] Dual-boot / existing partition preservation (defer)
 - [ ] UKI: mkinitcpio vs dracut decision (defer until Stage 13)
 - [ ] Secure Boot key enrollment UI (defer until Stage 13)
+- [ ] pkexec privilege escalation not yet wired up (safe in dry-run)
 
 ---
 
@@ -364,29 +353,27 @@ If LUKS also enabled, `state.bootloader_uki_needs_decrypt = True`.
 | 1       | chore: initial project scaffold and architecture                      |
 | 2       | feat(stage-0): welcome screen and experience level                    |
 | 2       | chore: restructure into installer/ package layout                     |
-| 2       | docs: wiki viewer, EFIStub/UKI, network-early decisions               |
-| 3       | feat(stage-1): network setup, wiki viewer, bug fixes                  |
-| 4       | feat(stage-2): keyboard layout screen and backend                     |
-| 4       | feat(stage-3): locale selection screen and backend                    |
-| 4       | feat(stage-4): disk selection screen and backend                      |
+| 3       | feat(stage-1): network setup, wiki viewer                             |
+| 4       | feat(stages-2-4): keyboard, locale, disk selection                    |
 | 4       | docs: update CLAUDE.md and README.md                                  |
-| 5       | feat(stage-5): partition scheme (auto + manual)                       |
-| 5       | feat(stage-6): filesystem + LUKS encryption                           |
-| 5       | fix(style): disk card selection highlight, passphrase colours         |
+| 5       | feat(stages-5-6): partition scheme, filesystem + LUKS encryption      |
 | 5       | docs: update CLAUDE.md and README.md                                  |
 | 6       | feat(stage-7): mirror selection with reflector integration            |
 | 6       | fix(mirrors): checkbox pre-selection, US first, visibility timing     |
 | 6       | docs: update CLAUDE.md and README.md                                  |
+| 7       | feat(stage-8): package selection — DE/WM picker + curated extras      |
+| 7       | feat(stage-9): base system install with dry-run safety mode           |
+| 7       | feat(safety): dry-run mode, runner.py, amber banner                   |
+| 7       | fix(style): add disk-card CSS classes, dry-run banner styles          |
+| 7       | docs: update CLAUDE.md and README.md                                  |
 
 ---
 
-## Next Session: Stage 8 — Package Selection
+## Next Session: Stage 10 — Timezone
 
-- File: `installer/ui/packages.py`
-- Beginner: just a DE picker (None / GNOME / KDE / XFCE) with sane defaults
-- Intermediate: DE picker + common extras (e.g. Firefox, VLC, Git, CUPS)
-- Advanced: full package list editor — add/remove anything from repos
-- Always installs: base, base-devel, linux, linux-firmware, NetworkManager
-- DE selection drives `state.desktop_environment` and `state.display_manager`
-- Extra packages saved to `state.extra_packages`
+- File: `installer/ui/timezone.py`
+- Interactive map or scrollable list to pick timezone
+- Auto-detect from locale/IP as default suggestion
+- Sets `state.timezone` (e.g. 'America/Los_Angeles')
+- Backend: `run_chroot(["ln", "-sf", ...], state)` to set /etc/localtime
 - Upload `main.py` and `state.py` at start of next session

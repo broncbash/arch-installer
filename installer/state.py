@@ -94,7 +94,7 @@ class InstallState:
     install_complete: bool = False
 
     # ── Runtime flags ─────────────────────────────────────────────────────────
-    dry_run: bool = False            # If True, simulate all disk ops (for testing)
+    dry_run: bool = True             # ← SAFETY: flip to False only for real installs
 
     def add_log(self, message: str):
         """Append a line to the install log."""

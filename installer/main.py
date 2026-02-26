@@ -19,6 +19,8 @@ from installer.ui.disk_select import DiskSelectScreen
 from installer.ui.partition import PartitionScreen
 from installer.ui.filesystem import FilesystemScreen
 from installer.ui.mirrors import MirrorScreen
+from installer.ui.packages import PackageScreen
+from installer.ui.install import InstallScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -45,6 +47,8 @@ class InstallerWindow(Gtk.Window):
         ("Partitions",     lambda: PartitionScreen),
         ("Filesystem",     lambda: FilesystemScreen),
         ("Mirrors",        lambda: MirrorScreen),
+        ("Packages",       lambda: PackageScreen),
+        ("Install",        lambda: InstallScreen),
     ]
 
     def __init__(self):
@@ -58,10 +62,35 @@ class InstallerWindow(Gtk.Window):
         self.state = InstallState()
         self._stage_index = 0
 
+        # Outer vertical box — banner on top, deck below
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.add(outer)
+
+        # ── Dry-run warning banner ─────────────────────────────────────────────
+        if self.state.dry_run:
+            banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            banner.get_style_context().add_class("dry-run-banner")
+            banner.set_margin_start(0)
+            banner.set_margin_end(0)
+
+            icon = Gtk.Label(label="🧪")
+            icon.set_margin_start(12)
+            banner.pack_start(icon, False, False, 0)
+
+            msg = Gtk.Label(
+                label="DRY RUN MODE  —  Nothing will be written to disk. "
+                      "To perform a real install, set  dry_run = False  in installer/state.py"
+            )
+            msg.get_style_context().add_class("dry-run-text")
+            msg.set_xalign(0)
+            banner.pack_start(msg, True, True, 0)
+
+            outer.pack_start(banner, False, False, 0)
+
         self._deck = Gtk.Stack()
         self._deck.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT)
         self._deck.set_transition_duration(220)
-        self.add(self._deck)
+        outer.pack_start(self._deck, True, True, 0)
 
         self._load_current_stage()
         self.show_all()
