@@ -160,34 +160,31 @@ class BaseScreen(Gtk.Box):
             wiki_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
             info_panel.pack_start(wiki_sep, False, False, 0)
 
-            # Labeled frame with "📖 Arch Wiki" title
-            wiki_frame = Gtk.Frame()
-            wiki_frame.get_style_context().add_class("wiki-frame")
-            wiki_frame.set_margin_start(12)
-            wiki_frame.set_margin_end(12)
-            wiki_frame.set_margin_top(10)
-            wiki_frame.set_margin_bottom(10)
+            # Expander — collapsed by default so hints get full panel height
+            expander = Gtk.Expander()
+            expander.get_style_context().add_class("wiki-expander")
+            expander.set_margin_start(12)
+            expander.set_margin_end(12)
+            expander.set_margin_top(8)
+            expander.set_margin_bottom(8)
 
-            wiki_title = Gtk.Label(label="📖  Arch Wiki")
-            wiki_title.get_style_context().add_class("wiki-frame-title")
-            wiki_frame.set_label_widget(wiki_title)
+            # Custom label widget so we can style it like the old frame title
+            exp_label = Gtk.Label(label="📖  Arch Wiki")
+            exp_label.get_style_context().add_class("wiki-frame-title")
+            expander.set_label_widget(exp_label)
 
             wiki_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            wiki_box.set_margin_start(8)
-            wiki_box.set_margin_end(8)
-            wiki_box.set_margin_top(6)
-            wiki_box.set_margin_bottom(8)
+            wiki_box.set_margin_top(8)
+            wiki_box.set_margin_bottom(4)
 
             for label_text, url in self.WIKI_LINKS:
                 btn = Gtk.Button(label=label_text)
                 btn.get_style_context().add_class("wiki-link-button")
-                # Capture url in a default argument so the closure works correctly
-                # in a loop (a common Python gotcha).
                 btn.connect("clicked", lambda _b, u=url: self._open_wiki(u))
                 wiki_box.pack_start(btn, False, False, 0)
 
-            wiki_frame.add(wiki_box)
-            info_panel.pack_start(wiki_frame, False, False, 0)
+            expander.add(wiki_box)
+            info_panel.pack_start(expander, False, False, 0)
 
         # ── Experience level selector (always at bottom of info panel) ────────
         level_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)

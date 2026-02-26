@@ -27,7 +27,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Experience levels** — Beginner, Intermediate, and Advanced modes that adjust
   available options and explanations on every screen
 - **Contextual hints** — every screen has an info panel tailored to your level
-- **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser
+- **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser,
+  accessible via a collapsible "📖 Arch Wiki" expander in the hints panel
 - **Full partitioning** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvolumes
 - **Mirror selection** — reflector with checkbox country picker and live log
 - **Package selection** — 9 DE/WM options plus curated extras and free-form entry
@@ -35,6 +36,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **System config** — hostname validation, root password with strength indicator, NTP
 - **User setup** — username, password, sudo, shell picker, group checkboxes
 - **Base system install** — pacstrap with live log, per-step progress, retry on error
+- **Bootloader selection** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; options
+  filtered by experience level with live card switching
 - **Dry-run mode** — red banner + full simulation so you can test safely anywhere
 
 ---
@@ -56,7 +59,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 10 | System Config / Hostname | ✅ Complete |
 | 11 | User Setup | ✅ Complete |
 | 12 | Base Install (pacstrap) | ✅ Complete |
-| 13 | Bootloader | 🔲 Planned |
+| 13 | Bootloader | ✅ Complete |
 | 14 | Review & Confirm | 🔲 Planned |
 | 15 | Complete / Reboot | 🔲 Planned |
 
@@ -111,6 +114,10 @@ included in the pacstrap package list.
 - Beginner sees only the safest options with plain-language explanations
 - Intermediate unlocks more choices with brief technical context
 - Advanced exposes everything with full technical detail
+
+**Arch Wiki links** are available on every screen via a collapsible expander
+at the bottom of the hints panel. Collapsed by default so the hint text always
+has room to breathe — one click to expand when you need a reference.
 
 ---
 

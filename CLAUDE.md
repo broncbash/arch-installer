@@ -54,7 +54,7 @@ No Calamares. No archinstall. Completely original.
 10  System Config / Hostname
 11  User Setup                 ← shell adds zsh/fish to extra_packages
 12  Base Install               ← pacstrap runs with complete package list
-13  Bootloader                 (planned)
+13  Bootloader                 ✅ complete
 14  Review & Confirm           (planned)
 15  Complete / Reboot          (planned)
 ```
@@ -76,7 +76,7 @@ No Calamares. No archinstall. Completely original.
 | 10 | System Config          | ✅ Complete | ui/system_config.py                      |
 | 11 | User Setup             | ✅ Complete | ui/users.py                              |
 | 12 | Base Install           | ✅ Complete | ui/install.py, backend/pacstrap.py       |
-| 13 | Bootloader             | 🔲 Planned  |                                          |
+| 13 | Bootloader             | ✅ Complete | ui/bootloader.py                         |
 | 14 | Review & Confirm       | 🔲 Planned  |                                          |
 | 15 | Complete / Reboot      | 🔲 Planned  |                                          |
 
@@ -105,7 +105,8 @@ arch-installer/
 │   │   ├── timezone.py         ← stage 9
 │   │   ├── system_config.py    ← stage 10
 │   │   ├── users.py            ← stage 11
-│   │   └── install.py          ← stage 12
+│   │   ├── install.py          ← stage 12
+│   │   └── bootloader.py       ← stage 13
 │   ├── backend/
 │   │   ├── runner.py           ← dry-run safe subprocess wrapper
 │   │   ├── network.py
@@ -149,6 +150,9 @@ Key fields:
 - `root_password`       — string
 - `enable_ntp`          — bool, default True
 - `users`               — list of user dicts (see below)
+- `bootloader`          — 'grub'|'systemd-boot'|'refind'|'efistub'|'uki'
+- `bootloader_uki`      — bool, True if UKI selected
+- `bootloader_uki_needs_decrypt` — bool, True if UKI + LUKS enabled
 - `dry_run`             — bool, default True
 
 User dict format:
@@ -180,6 +184,15 @@ Set instance variables BEFORE calling `super().__init__()`.
 - Requires `self.next_btn` which is built by BaseScreen after `build_content()`.
 - Guard any call made during `build_content()`:
   `if hasattr(self, 'next_btn'): self.set_next_enabled(...)`
+
+**Wiki links:**
+- Define `WIKI_LINKS = [("Label", "https://..."), ...]` as a class variable.
+- BaseScreen renders them automatically in a `Gtk.Expander` ("📖 Arch Wiki")
+  in the hints panel — collapsed by default so hint text gets full height.
+- NEVER build wiki link widgets manually in `build_content()`.
+- `_open_wiki(url)` is provided by BaseScreen; override only if you need to
+  pass extra context (e.g. NetworkScreen passes `connected=self._connected`).
+  Override signature must be `_open_wiki(self, url: str)` — one argument.
 
 ---
 
@@ -223,11 +236,12 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 `.disk-card-selected`, `.info-panel`, `.screen-title`, `.nav-btn`, `.nav-btn-next`,
 `.action-button`, `.section-heading`, `.detail-key`, `.detail-value`,
 `.status-ok`, `.status-error`, `.error-label`, `.passphrase-weak/fair/good/strong`,
-`.dry-run-banner`, `.dry-run-text`
+`.dry-run-banner`, `.dry-run-text`, `.wiki-expander`, `.wiki-frame-title`,
+`.wiki-link-button`
 
 ---
 
-## Bootloader Options (Stage 13, planned)
+## Bootloader Options (Stage 13)
 
 | Bootloader   | Beginner | Intermediate | Advanced |
 |--------------|----------|--------------|----------|
@@ -237,8 +251,9 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 | EFIStub      | ❌        | ❌            | ✅        |
 | UKI          | ❌        | ❌            | ✅        |
 
-UKI note: if LUKS is enabled, `state.bootloader_uki_needs_decrypt = True` —
-the initramfs must include the decrypt hook.
+- Cards rebuild live when experience level changes (`on_experience_changed()`)
+- BIOS mode: only GRUB allowed; Next is blocked for any other choice
+- UKI + LUKS: shows decrypt hook warning; sets `bootloader_uki_needs_decrypt = True`
 
 ---
 
@@ -246,8 +261,8 @@ the initramfs must include the decrypt hook.
 
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
-- [ ] UKI: mkinitcpio vs dracut (defer to Stage 13)
-- [ ] Secure Boot key enrollment (defer to Stage 13)
+- [ ] UKI: mkinitcpio vs dracut — backend not yet wired (Stage 13 UI complete)
+- [ ] Secure Boot key enrollment — deferred post-bootloader
 - [ ] pkexec privilege escalation not yet wired up
 
 ---
@@ -280,15 +295,19 @@ the initramfs must include the decrypt hook.
 | 9       | fix(filesystem): visibility timing bug on beginner level                |
 | 9       | fix(install): hostname + users in summary and install log               |
 | 9       | docs: update CLAUDE.md and README.md                                    |
+| 10      | feat(stage-13): bootloader selection screen                             |
+| 10      | fix(ui): wiki links collapsible expander in hints panel                 |
+| 10      | fix(network): move wiki links to panel, remove inline widget            |
+| 10      | docs: update CLAUDE.md and README.md                                    |
 
 ---
 
-## Next Session: Stage 13 — Bootloader
+## Next Session: Stage 14 — Review & Confirm
 
-- File: `installer/ui/bootloader.py`
-- Beginner: GRUB or systemd-boot (two clear option cards)
-- Intermediate: same + rEFInd
-- Advanced: same + EFIStub + UKI
-- If LUKS enabled and UKI selected: show decrypt hook warning
-- Saves to: `state.bootloader`
+- File: `installer/ui/review.py`
+- Show a complete human-readable summary of every selection made
+- Use `state.summary()` as a starting point but render it properly in the UI
+- Group by category: Disk, System, Packages, Users, Bootloader
+- A final "Begin Installation" / "Begin Dry Run" confirm button
+- Consider a "Go back to stage X" quick-jump for each section
 - Upload `main.py` and `state.py` at start of next session

@@ -11,15 +11,15 @@ from gi.repository import Gtk, GLib
 from installer.ui.base_screen import BaseScreen
 from installer.backend import network as net_backend
 
-WIKI_LINKS = [
-    ("Network configuration",                    "https://wiki.archlinux.org/title/Network_configuration"),
-    ("iwd",                                      "https://wiki.archlinux.org/title/Iwd"),
-    ("Installation guide — Connect to internet", "https://wiki.archlinux.org/title/Installation_guide#Connect_to_the_internet"),
-]
-
 class NetworkScreen(BaseScreen):
     title    = "Network Setup"
     subtitle = "Connect to the internet before continuing."
+
+    WIKI_LINKS = [
+        ("Network configuration",                    "https://wiki.archlinux.org/title/Network_configuration"),
+        ("iwd",                                      "https://wiki.archlinux.org/title/Iwd"),
+        ("Installation guide — Connect to internet", "https://wiki.archlinux.org/title/Installation_guide#Connect_to_the_internet"),
+    ]
 
     def __init__(self, state, on_next=None, on_back=None):
         self._connected = False
@@ -70,7 +70,6 @@ class NetworkScreen(BaseScreen):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
 
         box.pack_start(self._build_status_card(),    False, False, 0)
-        box.pack_start(self._build_wiki_links(),     False, False, 0)
 
         wifi_lbl = Gtk.Label(label="Wi-Fi")
         wifi_lbl.get_style_context().add_class("section-heading")
@@ -141,32 +140,6 @@ class NetworkScreen(BaseScreen):
 
         vbox.pack_start(grid, False, False, 0)
         frame.add(vbox)
-        return frame
-
-    def _build_wiki_links(self) -> Gtk.Widget:
-        # Outer labeled frame
-        frame = Gtk.Frame()
-        frame.get_style_context().add_class("wiki-frame")
-
-        # Frame label widget (replaces the default plain-text label)
-        frame_label = Gtk.Label()
-        frame_label.set_markup("<b>📖  Arch Wiki</b>")
-        frame_label.get_style_context().add_class("wiki-frame-title")
-        frame.set_label_widget(frame_label)
-
-        inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        inner.set_margin_top(8)
-        inner.set_margin_bottom(10)
-        inner.set_margin_start(12)
-        inner.set_margin_end(12)
-
-        for label, url in WIKI_LINKS:
-            btn = Gtk.Button(label=label)
-            btn.get_style_context().add_class("wiki-link-button")
-            btn.connect("clicked", self._open_wiki, url)
-            inner.pack_start(btn, False, False, 0)
-
-        frame.add(inner)
         return frame
 
     def _build_scan_row(self) -> Gtk.Widget:
@@ -320,7 +293,7 @@ class NetworkScreen(BaseScreen):
         if ok:
             self._refresh_status()
 
-    def _open_wiki(self, _btn, url: str):
+    def _open_wiki(self, url: str):
         from installer.wiki.viewer import open_wiki
         open_wiki(url, connected=self._connected)
 
