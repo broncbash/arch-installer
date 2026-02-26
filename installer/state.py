@@ -102,12 +102,13 @@ class InstallState:
         self.install_log.append(message)
 
     def add_user(self, username: str, password: str, sudo: bool = True,
-                 shell: str = "/bin/bash"):
+                 shell: str = "/bin/bash", groups: list = None):
         self.users.append({
             "username": username,
             "password": password,
             "sudo": sudo,
             "shell": shell,
+            "groups": groups or [],
         })
 
     def summary(self) -> str:

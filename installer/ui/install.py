@@ -158,14 +158,20 @@ class InstallScreen(BaseScreen):
         cfg_box.pack_start(cfg_heading, False, False, 0)
 
         s = self.state
+        user_summary = ", ".join(
+            f"{u['username']} ({'sudo' if u['sudo'] else 'no sudo'})"
+            for u in s.users
+        ) or "(none)"
         cfg_rows = [
-            ("Disk",         s.target_disk or "(not set)"),
+            ("Disk",            s.target_disk or "(not set)"),
             ("Partition table", s.partition_table.upper()),
             ("Root filesystem", s.root_filesystem),
-            ("Encryption",   "LUKS2" if s.luks_passphrase else "None"),
-            ("Desktop",      s.desktop_environment or "None (base only)"),
-            ("Bootloader",   s.bootloader),
-            ("Mirrors",      f"{len([l for l in s.mirrorlist.splitlines() if l.strip().startswith('Server =')])} servers"),
+            ("Encryption",      "LUKS2" if s.luks_passphrase else "None"),
+            ("Hostname",        s.hostname or "(not set)"),
+            ("Users",           user_summary),
+            ("Desktop",         s.desktop_environment or "None (base only)"),
+            ("Bootloader",      s.bootloader),
+            ("Mirrors",         f"{len([l for l in s.mirrorlist.splitlines() if l.strip().startswith('Server =')])} servers"),
         ]
         for key, val in cfg_rows:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)

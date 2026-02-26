@@ -144,9 +144,9 @@ class FilesystemScreen(BaseScreen):
         # ── Encryption section ────────────────────────────────────────────────
         root.pack_start(self._build_encryption_section(), False, False, 0)
 
-        # Apply initial visibility
-        self._update_btrfs_visibility()
-        self._update_encryption_visibility()
+        # Defer visibility until after show_all() completes
+        from gi.repository import GLib
+        GLib.idle_add(self._apply_all_visibility)
 
         return root
 
@@ -237,9 +237,7 @@ class FilesystemScreen(BaseScreen):
 
         frame.add(box)
 
-        # Set initial selection and visibility
         self._fs_frame = frame
-        self._apply_fs_visibility()
 
         # Set the correct radio active
         if self._root_fs in self._fs_radios:
@@ -266,6 +264,13 @@ class FilesystemScreen(BaseScreen):
                 if self._root_fs == fs:
                     self._root_fs = "ext4"
                     self._fs_radios["ext4"][0].set_active(True)
+
+    def _apply_all_visibility(self):
+        """Apply all visibility rules. Called via idle_add after show_all()."""
+        self._apply_fs_visibility()
+        self._update_btrfs_visibility()
+        self._update_encryption_visibility()
+        return False  # GLib one-shot
 
     def on_experience_changed(self):
         """Called by BaseScreen when experience level changes."""

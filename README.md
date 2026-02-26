@@ -28,34 +28,34 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
   available options and explanations on every screen
 - **Contextual hints** — every screen has an info panel tailored to your level
 - **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser
-- **Full partitioning support** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvols
+- **Full partitioning** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvolumes
 - **Mirror selection** — reflector with checkbox country picker and live log
 - **Package selection** — 9 DE/WM options plus curated extras and free-form entry
-- **Base system install** — pacstrap with live log, per-step progress, retry on error
 - **Timezone** — searchable list with live clock preview, auto-detected default
 - **System config** — hostname validation, root password with strength indicator, NTP
+- **User setup** — username, password, sudo, shell picker, group checkboxes
+- **Base system install** — pacstrap with live log, per-step progress, retry on error
 - **Dry-run mode** — red banner + full simulation so you can test safely anywhere
-- **Nothing written to disk** until confirmed — and never in dry-run mode
 
 ---
 
 ## Installation Stages
 
-| # | Stage | Status |
-|---|-------|--------|
-| 0 | Welcome / Experience Level | ✅ Complete |
-| 1 | Network Setup | ✅ Complete |
-| 2 | Keyboard Layout | ✅ Complete |
-| 3 | Language / Locale | ✅ Complete |
-| 4 | Disk Selection | ✅ Complete |
-| 5 | Partition Scheme | ✅ Complete |
-| 6 | Filesystem + Encryption | ✅ Complete |
-| 7 | Mirror Selection | ✅ Complete |
-| 8 | Package Selection | ✅ Complete |
-| 9 | Base Install (pacstrap) | ✅ Complete |
-| 10 | Timezone | ✅ Complete |
-| 11 | System Config / Hostname | ✅ Complete |
-| 12 | User + Root Setup | 🔲 Planned |
+| #  | Stage | Status |
+|----|-------|--------|
+|  0 | Welcome / Experience Level | ✅ Complete |
+|  1 | Network Setup | ✅ Complete |
+|  2 | Keyboard Layout | ✅ Complete |
+|  3 | Language / Locale | ✅ Complete |
+|  4 | Disk Selection | ✅ Complete |
+|  5 | Partition Scheme | ✅ Complete |
+|  6 | Filesystem + Encryption | ✅ Complete |
+|  7 | Mirror Selection | ✅ Complete |
+|  8 | Package Selection | ✅ Complete |
+|  9 | Timezone | ✅ Complete |
+| 10 | System Config / Hostname | ✅ Complete |
+| 11 | User Setup | ✅ Complete |
+| 12 | Base Install (pacstrap) | ✅ Complete |
 | 13 | Bootloader | 🔲 Planned |
 | 14 | Review & Confirm | 🔲 Planned |
 | 15 | Complete / Reboot | 🔲 Planned |
@@ -87,67 +87,30 @@ no disk operations are performed. To perform a real install, set
 
 ## Safety: Dry-Run Mode
 
-The installer ships with `dry_run = True` in `installer/state.py`. In this mode:
-
 - A **red warning banner** is shown at the top of every screen
 - All disk operations are **logged but never executed**
-- The UI behaves exactly as in a real install — progress bars fill, logs scroll
+- The install screen shows "🧪 Begin Dry Run" instead of "Begin Installation"
+- The full UI flow works identically — progress bars, logs, step indicators
 
 To perform a real install:
 ```python
 # installer/state.py
-dry_run: bool = False   # was True
+dry_run: bool = False
 ```
 
 ---
 
-## Project Structure
+## Design Notes
 
-```
-arch-installer/
-├── installer/
-│   ├── main.py                  # Entry point, stage controller, dry-run banner
-│   ├── state.py                 # Shared install state
-│   ├── ui/
-│   │   ├── base_screen.py       # Base class all screens inherit from
-│   │   ├── welcome.py           # Stage 0  — Welcome / Experience Level
-│   │   ├── network.py           # Stage 1  — Network Setup
-│   │   ├── keyboard.py          # Stage 2  — Keyboard Layout
-│   │   ├── locale_screen.py     # Stage 3  — Language / Locale
-│   │   ├── disk_select.py       # Stage 4  — Disk Selection
-│   │   ├── partition.py         # Stage 5  — Partition Scheme
-│   │   ├── filesystem.py        # Stage 6  — Filesystem + Encryption
-│   │   ├── mirrors.py           # Stage 7  — Mirror Selection
-│   │   ├── packages.py          # Stage 8  — Package Selection
-│   │   ├── install.py           # Stage 9  — Base System Install
-│   │   ├── timezone.py          # Stage 10 — Timezone
-│   │   ├── system_config.py     # Stage 11 — System Config / Hostname
-│   │   └── ...                  # Remaining stages (planned)
-│   ├── backend/
-│   │   ├── runner.py            # Dry-run aware subprocess wrapper
-│   │   ├── network.py           # Connectivity, iwd WiFi
-│   │   ├── keyboard.py          # localectl / loadkeys
-│   │   ├── locale.py            # locale.gen parser
-│   │   ├── disk.py              # lsblk, boot mode, RAM detection
-│   │   ├── mirrors.py           # reflector, fallback mirrorlist
-│   │   └── pacstrap.py          # Full install sequence
-│   ├── wiki/
-│   │   └── viewer.py            # In-app WebKit2GTK wiki viewer
-│   └── assets/
-│       ├── installer.png
-│       ├── installer.svg
-│       └── style.css            # Dark GitHub-style GTK theme
-├── CLAUDE.md
-└── README.md
-```
+**All choices come before the install.** Packages, timezone, hostname, users —
+everything is configured first. Pacstrap runs last with the complete picture.
+This means the shell you pick for your user (zsh, fish) is automatically
+included in the pacstrap package list.
 
----
-
-## Design Philosophy
-
-Built as a learning project to understand both the Arch Linux installation
-process and GTK3 development deeply. Every screen works at the Beginner level
-while exposing full control at Advanced.
+**Experience levels** control what's visible on every screen:
+- Beginner sees only the safest options with plain-language explanations
+- Intermediate unlocks more choices with brief technical context
+- Advanced exposes everything with full technical detail
 
 ---
 

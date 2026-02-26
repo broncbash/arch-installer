@@ -23,6 +23,7 @@ from installer.ui.packages import PackageScreen
 from installer.ui.install import InstallScreen
 from installer.ui.timezone import TimezoneScreen
 from installer.ui.system_config import SystemConfigScreen
+from installer.ui.users import UsersScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -50,9 +51,10 @@ class InstallerWindow(Gtk.Window):
         ("Filesystem",     lambda: FilesystemScreen),
         ("Mirrors",        lambda: MirrorScreen),
         ("Packages",       lambda: PackageScreen),
-        ("Install",        lambda: InstallScreen),
         ("Timezone",       lambda: TimezoneScreen),
         ("System Config",  lambda: SystemConfigScreen),
+        ("Users",          lambda: UsersScreen),
+        ("Install",        lambda: InstallScreen),
     ]
 
     def __init__(self):

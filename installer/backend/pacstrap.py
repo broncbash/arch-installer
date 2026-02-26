@@ -38,6 +38,8 @@ INSTALL_STEPS = [
     ("mirrorlist",  "Write mirrorlist"),
     ("pacstrap",    "Install base system  (this takes a while)"),
     ("fstab",       "Generate fstab"),
+    ("hostname",    "Set hostname"),
+    ("users",       "Create user accounts"),
 ]
 
 
@@ -56,6 +58,8 @@ def run_step(step_id: str, state) -> tuple:
         "mirrorlist": _step_mirrorlist,
         "pacstrap":   _step_pacstrap,
         "fstab":      _step_fstab,
+        "hostname":   _step_hostname,
+        "users":      _step_users,
     }.get(step_id)
 
     if fn is None:
@@ -458,6 +462,125 @@ def _step_fstab(state) -> tuple:
     )
     return ok, out
 
+
+
+
+def _step_hostname(state) -> tuple:
+    """Write /etc/hostname and /etc/hosts inside the chroot."""
+    logs = []
+    hostname = state.hostname or "archlinux"
+
+    # /etc/hostname
+    if state.dry_run:
+        ok, out = run_cmd(
+            ["bash", "-c", f"echo '{hostname}' > {MOUNTPOINT}/etc/hostname"],
+            state, f"Write /etc/hostname ({hostname})"
+        )
+    else:
+        try:
+            with open(f"{MOUNTPOINT}/etc/hostname", "w") as f:
+                f.write(hostname + "\n")
+            state.add_log(f"Wrote /etc/hostname: {hostname}")
+            ok, out = True, f"Hostname set to: {hostname}"
+        except OSError as e:
+            return False, f"Failed to write /etc/hostname: {e}"
+    if not ok:
+        return False, out
+    logs.append(out)
+
+    # /etc/hosts
+    hosts_content = (
+        "127.0.0.1   localhost\n"
+        "::1         localhost\n"
+        f"127.0.1.1   {hostname}.localdomain  {hostname}\n"
+    )
+    if state.dry_run:
+        ok, out = run_cmd(
+            ["bash", "-c", f"cat > {MOUNTPOINT}/etc/hosts"],
+            state, "Write /etc/hosts"
+        )
+    else:
+        try:
+            with open(f"{MOUNTPOINT}/etc/hosts", "w") as f:
+                f.write(hosts_content)
+            state.add_log("Wrote /etc/hosts")
+            ok, out = True, "Wrote /etc/hosts"
+        except OSError as e:
+            return False, f"Failed to write /etc/hosts: {e}"
+    if not ok:
+        return False, out
+    logs.append(out)
+
+    return True, "\n".join(logs)
+
+
+def _step_users(state) -> tuple:
+    """Set root password and create user accounts inside the chroot."""
+    logs = []
+
+    # Set root password
+    if state.root_password:
+        safe = state.root_password.replace("'", "'\\''")
+        ok, out = run_cmd(
+            ["bash", "-c",
+             f"echo 'root:{safe}' | arch-chroot {MOUNTPOINT} chpasswd"],
+            state, "Set root password"
+        )
+        if not ok:
+            return False, out
+        logs.append(out)
+
+    # Create each user
+    for user in state.users:
+        uname = user["username"]
+        pw    = user["password"]
+        shell = user.get("shell", "/bin/bash")
+        sudo  = user.get("sudo", True)
+
+        # Build group list: wheel if sudo, plus any extra groups
+        group_list = []
+        if sudo:
+            group_list.append("wheel")
+        extra = user.get("groups", [])
+        group_list.extend(extra)
+        if not group_list:
+            group_list.append("users")
+        groups_str = ",".join(group_list)
+
+        ok, out = run_chroot(
+            ["useradd", "-m", "-G", groups_str, "-s", shell, uname],
+            state, f"Create user: {uname} (groups: {groups_str})"
+        )
+        if not ok:
+            return False, out
+        logs.append(out)
+
+        # Set user password
+        safe_pw = pw.replace("'", "'\\''")
+        ok, out = run_cmd(
+            ["bash", "-c",
+             f"echo '{uname}:{safe_pw}' | arch-chroot {MOUNTPOINT} chpasswd"],
+            state, f"Set password for {uname}"
+        )
+        if not ok:
+            return False, out
+        logs.append(out)
+
+        # Enable sudo via wheel group (uncomment %wheel line in sudoers)
+        if sudo:
+            ok, out = run_chroot(
+                ["sed", "-i",
+                 "s/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/",
+                 "/etc/sudoers"],
+                state, "Enable wheel group in sudoers"
+            )
+            if not ok:
+                return False, out
+            logs.append(out)
+
+        logs.append(f"Created user: {uname} (shell={shell}, sudo={sudo})")
+
+    return True, "\n".join(logs)
 
 def build_package_list(state) -> list:
     """Return the full list of packages that will be installed. Used for display."""
