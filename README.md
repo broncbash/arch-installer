@@ -32,6 +32,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
   WebKit2GTK browser window, with a graceful fallback if offline
 - **Full partitioning support** — MBR/GPT, automatic layouts, manual partitioning,
   LUKS encryption, Btrfs subvolumes
+- **Mirror selection** — reflector integration with country picker, live command
+  display, elapsed timer, and bundled fallback mirrorlist
 - **Bootloader choice** — GRUB, systemd-boot, rEFInd, EFIStub, UKI *(coming soon)*
 - **Desktop environment selection** — choose your DE/WM at install time *(coming soon)*
 - **Nothing written to disk** until you confirm the final review screen
@@ -50,7 +52,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 4 | Disk Selection | ✅ Complete |
 | 5 | Partition Scheme | ✅ Complete |
 | 6 | Filesystem + Encryption | ✅ Complete |
-| 7 | Mirror Selection | 🔲 Planned |
+| 7 | Mirror Selection | ✅ Complete |
 | 8 | Package Selection | 🔲 Planned |
 | 9 | Base Install (pacstrap) | 🔲 Planned |
 | 10 | Timezone | 🔲 Planned |
@@ -66,11 +68,13 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 ## Dependencies
 
 ```bash
-sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted
+sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted reflector
 ```
 
 > **Note:** `webkit2gtk` is required for the integrated Arch Wiki viewer.
 > Without it the viewer falls back to displaying the raw URL.
+> `reflector` is required for the mirror selection screen.
+> Without it the bundled fallback mirrorlist is used automatically.
 
 ---
 
@@ -104,12 +108,14 @@ arch-installer/
 │   │   ├── disk_select.py   # Stage 4 — Disk Selection
 │   │   ├── partition.py     # Stage 5 — Partition Scheme
 │   │   ├── filesystem.py    # Stage 6 — Filesystem + Encryption
+│   │   ├── mirrors.py       # Stage 7 — Mirror Selection
 │   │   └── ...              # Remaining stages (in progress)
 │   ├── backend/
 │   │   ├── network.py       # Connectivity checks, iwd WiFi wrapper
 │   │   ├── keyboard.py      # localectl / loadkeys wrappers
 │   │   ├── locale.py        # locale.gen parser
 │   │   ├── disk.py          # lsblk wrapper, boot mode detection, RAM detection
+│   │   ├── mirrors.py       # reflector wrapper, fallback mirrorlist
 │   │   └── ...              # Disk ops, pacstrap, chroot, config (planned)
 │   ├── wiki/
 │   │   └── viewer.py        # In-app WebKit2GTK wiki viewer

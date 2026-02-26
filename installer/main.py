@@ -18,6 +18,7 @@ from installer.ui.locale_screen import LocaleScreen
 from installer.ui.disk_select import DiskSelectScreen
 from installer.ui.partition import PartitionScreen
 from installer.ui.filesystem import FilesystemScreen
+from installer.ui.mirrors import MirrorScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -43,6 +44,7 @@ class InstallerWindow(Gtk.Window):
         ("Disk",           lambda: DiskSelectScreen),
         ("Partitions",     lambda: PartitionScreen),
         ("Filesystem",     lambda: FilesystemScreen),
+        ("Mirrors",        lambda: MirrorScreen),
     ]
 
     def __init__(self):
@@ -113,6 +115,7 @@ class InstallerWindow(Gtk.Window):
             f"Partition scheme : {self.state.partition_scheme}\n"
             f"Filesystem       : {self.state.root_filesystem}\n"
             f"Encryption       : {'Yes' if self.state.luks_passphrase else 'No'}\n"
+            f"Mirrors          : {len([l for l in self.state.mirrorlist.splitlines() if l.strip().startswith('Server')])} servers\n"
             "(Next stages not yet implemented.)"
         )
         dlg.run()

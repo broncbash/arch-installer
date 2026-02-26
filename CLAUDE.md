@@ -19,9 +19,9 @@ No Calamares. No archinstall. Completely original.
   - Intermediate: more options exposed, brief technical context
   - Advanced: full control, all options, technical detail
 - Every screen has an info/hint panel that adapts to the selected experience level
-- Every screen has one or more wiki links that open an in-app wiki viewer
-- GTK3 + Python (same stack as the systemd-manager project)
-- Dark GitHub-style theme (matching systemd-manager aesthetic)
+- Every screen has wiki links that open an in-app wiki viewer
+- GTK3 + Python
+- Dark GitHub-style theme
 - polkit / pkexec for privilege escalation where needed
 - **This is a learning project — owner is not a coder. Always provide complete
   files, never diffs or partial snippets. Plain-English explanations alongside code.**
@@ -55,7 +55,7 @@ No Calamares. No archinstall. Completely original.
 | 4 | Disk Selection               | ✅ Complete      | disk_select.py, backend/disk.py (partial)                    |
 | 5 | Partition Scheme             | ✅ Complete      | partition.py (auto + manual modes)                           |
 | 6 | Filesystem + Encryption      | ✅ Complete      | filesystem.py (ext4/btrfs/xfs/f2fs, LUKS, Btrfs subvols)    |
-| 7 | Mirror Selection             | 🔲 Not started  | reflector integration                                        |
+| 7 | Mirror Selection             | ✅ Complete      | mirrors.py UI + backend/mirrors.py                           |
 | 8 | Package Selection            | 🔲 Not started  | base, DE, extras                                             |
 | 9 | Base Install (pacstrap)      | 🔲 Not started  | Live progress bar                                            |
 |10 | Timezone                     | 🔲 Not started  |                                                              |
@@ -73,20 +73,20 @@ No Calamares. No archinstall. Completely original.
 ### File Structure
 ```
 arch-installer/
-├── CLAUDE.md                   ← YOU ARE HERE — paste to resume sessions
+├── CLAUDE.md
 ├── README.md
 ├── PKGBUILD
-├── LICENSE                     ← GPLv3
+├── LICENSE
 ├── arch-installer.desktop
 ├── docs/
 │   └── design-notes.md
 ├── installer/
 │   ├── __init__.py
-│   ├── main.py                 ← Entry point, stage controller, window manager ✅
+│   ├── main.py                 ← Entry point, stage controller ✅
 │   ├── state.py                ← Global install state object ✅
 │   ├── ui/
 │   │   ├── __init__.py
-│   │   ├── base_screen.py      ← Base class all screens inherit from ✅
+│   │   ├── base_screen.py      ← Base class ✅
 │   │   ├── welcome.py          ← Stage 0  ✅
 │   │   ├── network.py          ← Stage 1  ✅
 │   │   ├── keyboard.py         ← Stage 2  ✅
@@ -94,7 +94,7 @@ arch-installer/
 │   │   ├── disk_select.py      ← Stage 4  ✅
 │   │   ├── partition.py        ← Stage 5  ✅
 │   │   ├── filesystem.py       ← Stage 6  ✅
-│   │   ├── mirrors.py          ← Stage 7
+│   │   ├── mirrors.py          ← Stage 7  ✅
 │   │   ├── packages.py         ← Stage 8
 │   │   ├── timezone.py         ← Stage 10
 │   │   ├── system_config.py    ← Stage 11
@@ -109,14 +109,15 @@ arch-installer/
 │   │   ├── keyboard.py         ← localectl / loadkeys wrappers ✅
 │   │   ├── locale.py           ← locale.gen parser ✅
 │   │   ├── disk.py             ← lsblk wrapper, boot mode, RAM detection ✅
+│   │   ├── mirrors.py          ← reflector wrapper, fallback mirrorlist ✅
 │   │   ├── filesystem.py       ← mkfs.*, mount/umount helpers (planned)
-│   │   ├── pacstrap.py         ← pacstrap runner with progress parsing (planned)
-│   │   ├── chroot.py           ← arch-chroot command runner (planned)
-│   │   ├── bootloader.py       ← GRUB/systemd-boot/rEFInd/EFIStub/UKI (planned)
-│   │   └── config.py           ← fstab, locale.gen, mkinitcpio, etc. (planned)
+│   │   ├── pacstrap.py         ← pacstrap runner (planned)
+│   │   ├── chroot.py           ← arch-chroot runner (planned)
+│   │   ├── bootloader.py       ← bootloader install logic (planned)
+│   │   └── config.py           ← fstab, mkinitcpio, etc. (planned)
 │   ├── wiki/
 │   │   ├── __init__.py
-│   │   └── viewer.py           ← Gtk.Window + WebKit2.WebView wiki viewer ✅
+│   │   └── viewer.py           ← WebKit2GTK wiki viewer ✅
 │   └── assets/
 │       ├── installer.svg
 │       ├── installer.png
@@ -146,6 +147,8 @@ Key fields populated so far:
 - `luks_passphrase`               — empty string = no encryption
 - `bootloader_uki`                — True if UKI bootloader selected (Stage 13)
 - `bootloader_uki_needs_decrypt`  — True if LUKS enabled (affects initramfs)
+- `mirror_countries`              — list of reflector country name strings
+- `mirrorlist`                    — final mirrorlist file content string
 - `network_ok`                    — bool
 - `network_skipped`               — bool
 
@@ -155,8 +158,7 @@ Key fields populated so far:
 3. All long operations run in background threads; GTK updates via `GLib.idle_add`.
 4. Logging goes to `/tmp/arch-installer.log` during install.
 5. The info panel on every screen pulls from `get_hints()` keyed by `experience_level`.
-6. Every screen defines a `WIKI_LINKS` class variable: list of `(label, url)` tuples.
-   BaseScreen renders these automatically in the info panel.
+6. Every screen defines a `WIKI_LINKS` class variable rendered automatically by BaseScreen.
 7. The wiki viewer is non-modal — users can keep it open while using the installer.
 8. **Always provide complete files** — owner is learning to code, no diffs/snippets.
 
@@ -197,6 +199,13 @@ def on_experience_changed(self):         # optional: react to level changes
 **IMPORTANT:** Set instance variables BEFORE calling `super().__init__()` because
 `super().__init__()` immediately calls `build_content()`.
 
+**IMPORTANT:** GTK's `show_all()` is called after `build_content()` returns and will
+override any `.hide()` calls made during construction. To hide widgets on load,
+defer visibility calls using `GLib.idle_add(self._apply_visibility)` from inside
+`build_content()` — this runs after `show_all()` completes. Widgets that should
+never be shown by `show_all()` (e.g. spinners, result panels) use
+`widget.set_no_show_all(True)` instead.
+
 Useful methods provided by BaseScreen:
 ```python
 self.set_next_enabled(bool)    # enable/disable the Next button
@@ -229,10 +238,10 @@ Key CSS classes defined:
 - `.level-card`, `.level-card.selected`, `.level-card.hover` — experience cards
 - `.info-panel`, `.info-panel-header`, `.info-panel-text` — right panel
 - `.screen-title`, `.screen-subtitle`, `.screen-sep` — BaseScreen title bar
-- `.nav-bar`, `.nav-btn`, `.nav-btn-next`, `.nav-btn-back` — navigation
+- `.nav-bar`, `.nav-btn`, `.nav-btn-next` — navigation
 - `.card` — generic bordered card
 - `.disk-card`, `.disk-card-selected` — disk selection cards (Stage 4)
-- `.action-button` — Scan / Connect / Refresh / Apply buttons
+- `.action-button` — Scan / Connect / Refresh / Fetch buttons
 - `.wiki-frame`, `.wiki-frame-title`, `.wiki-link-button` — wiki links section
 - `.section-heading` — section labels within content
 - `.detail-key`, `.detail-value` — info grid labels
@@ -249,13 +258,28 @@ Key CSS classes defined:
 - Tries WebKit2 4.1 then falls back to 4.0
 - No-network / no-WebKit fallback page with selectable raw URL
 - BaseScreen calls it automatically when wiki link buttons are clicked
-- `connected` is read from `state.network_ok`
+
+---
+
+## Feature Design: Mirror Selection (Stage 7)
+
+- UI: `installer/ui/mirrors.py`
+- Backend: `installer/backend/mirrors.py`
+- Country list uses `Gtk.ListStore` with `CellRendererToggle` checkboxes
+- United States is always first in the list and pre-checked by default
+- Locale detection overrides default if country is in LOCALE_TO_COUNTRY dict
+- `set_activate_on_single_click(True)` must NOT be used — it double-fires and
+  un-checks the pre-selected country. Use `button-press-event` on the name column instead.
+- Visibility of options (num mirrors, protocol, sort, age) deferred via
+  `GLib.idle_add` so they run after `show_all()` — otherwise show_all overrides hides.
+- reflector runs in a background thread; UI updates via `GLib.idle_add`
+- Pulse timer ticks every second showing elapsed time while reflector runs
+- Falls back to bundled `FALLBACK_MIRRORLIST` if reflector fails or isn't installed
+- Saves to `state.mirrorlist` and `state.mirror_countries`
 
 ---
 
 ## Feature Design: Bootloader Options (Stage 13)
-
-Five bootloader options, visibility gated by experience level:
 
 | Bootloader     | Beginner | Intermediate | Advanced | Notes                                      |
 |----------------|----------|--------------|----------|--------------------------------------------|
@@ -265,9 +289,8 @@ Five bootloader options, visibility gated by experience level:
 | EFIStub        | ❌        | ❌            | ✅        | Kernel boots directly via UEFI. No loader. |
 | UKI            | ❌        | ❌            | ✅        | Unified Kernel Image. Secure Boot friendly.|
 
-UKI note: if selected at Stage 13, `state.bootloader_uki = True` influences
-mkinitcpio config generation. If LUKS is also enabled,
-`state.bootloader_uki_needs_decrypt = True` ensures the decrypt hook is included.
+UKI note: if selected, `state.bootloader_uki = True` influences mkinitcpio config.
+If LUKS also enabled, `state.bootloader_uki_needs_decrypt = True`.
 
 ---
 
@@ -279,96 +302,91 @@ mkinitcpio config generation. If LUKS is also enabled,
 - `_next_called` bool guard prevents double-fire of Continue button
 
 ### Stage 1 — network.py + backend/network.py
-- Status card shows live interface info via `get_interface_info()`
 - Connectivity check runs in a daemon thread on screen load
 - WiFi: Scan → TreeView list → passphrase entry → Connect via iwd
 - Skip button sets `state.network_skipped = True` and advances
-- Next button only enabled when connected = True
+- Next only enabled when connected = True
 
 ### Stage 2 — keyboard.py + backend/keyboard.py
 - `list_keymaps()` calls `localectl list-keymaps`; falls back to built-in list
-- `apply_keymap()` calls `loadkeys` for live preview
-- When running in a graphical session (not TTY), loadkeys fails gracefully
-- `get_current_keymap()` pre-selects the active keymap on load
+- `apply_keymap()` calls `loadkeys` for live preview (graceful fail in GUI session)
 - Filter model on TreeView for instant search across ~300 keymaps
 
 ### Stage 3 — locale_screen.py + backend/locale.py
-- `list_locales()` parses `/etc/locale.gen` (all lines, commented or not)
+- `list_locales()` parses `/etc/locale.gen`
 - UTF-8 only toggle: hidden/forced on for Beginner; shown for Intermediate/Advanced
-- Saves `state.locale` and `state.language` on Next
+- Saves `state.locale` and `state.language`
 
 ### Stage 4 — disk_select.py + backend/disk.py
-- `detect_boot_mode()` checks `/sys/firmware/efi` → 'uefi' or 'bios'
-- `list_disks()` calls `lsblk --json` and parses output
-- Each disk rendered as a clickable EventBox card
-- `.disk-card-selected` CSS class applied on click (blue border + dark bg)
-- Red warning shown if selected disk has existing partitions
+- `detect_boot_mode()` checks `/sys/firmware/efi`
+- `list_disks()` calls `lsblk --json`
+- Each disk is a clickable EventBox card with `.disk-card-selected` CSS on click
 - Sets `state.partition_table` default: 'gpt' for UEFI, 'mbr' for BIOS
 
 ### Stage 5 — partition.py + backend/disk.py additions
-- Auto mode: EFI (UEFI only, 512MB vfat) + optional swap + root (rest)
-- Manual mode: editable TreeView with Add/Edit/Delete; dialog for each partition
-- Intermediate/Advanced only for Manual; Beginners see it greyed out with note
-- `get_disk_size_mb()` and `get_ram_mb()` added to backend/disk.py
-- `suggest_swap_mb()` calculates sensible swap size from RAM
-- Validates: root partition required; UEFI requires vfat EFI partition
+- Auto mode: EFI (UEFI, 512MB vfat) + optional swap + root (rest)
+- Manual mode: editable TreeView; Beginner sees it greyed out
+- `get_disk_size_mb()`, `get_ram_mb()`, `suggest_swap_mb()` added to backend/disk.py
 - Saves list of `DiskPartition` objects to `state.partitions`
 
 ### Stage 6 — filesystem.py
-- Root filesystem choice: ext4 (all), btrfs/xfs (Intermediate+), f2fs (Advanced)
-- Btrfs subvolume section shown only when btrfs selected and level > Beginner
-- Standard subvolume layout: @, @home, @snapshots, @log, @cache
-- LUKS encryption: master toggle → passphrase + confirm entries
-- Passphrase entry border/bg changes colour live: red=Weak, amber=Fair, green=Good, blue=Strong
-- Confirm entry matches strength colour when passphrases match, red when mismatch
-- Eye button (ToggleButton) shows/hides passphrase text
+- Root filesystem: ext4 (all), btrfs/xfs (Intermediate+), f2fs (Advanced)
+- Btrfs subvolume section shown when btrfs selected and level > Beginner
+- LUKS: master toggle → passphrase + confirm; live strength colouring on entry widget
 - Sets `state.bootloader_uki_needs_decrypt = True` when encryption enabled
-- Updates `p.encrypt = True` on root (and /home if present) partitions in state
-- Updates `p.filesystem` on the root partition to the chosen filesystem
+- Updates `p.encrypt` and `p.filesystem` on root partition in state.partitions
+
+### Stage 7 — mirrors.py + backend/mirrors.py
+- Country list: checkbox TreeView, United States first and pre-checked
+- Beginner: country + Fetch button only
+- Intermediate: adds number of mirrors dropdown
+- Advanced: adds protocol, sort method, age limit
+- Fetch runs reflector in background thread with elapsed-second pulse timer
+- Shows exact reflector command that was run (selectable text)
+- Falls back to bundled mirrorlist on failure
+- Saves `state.mirrorlist` and `state.mirror_countries`
 
 ---
 
 ## Known Issues / Deferred Decisions
 
-- [ ] LVM support (intermediate/advanced only — defer)
-- [ ] Dual-boot / existing partition preservation (defer until partition screen V2)
-- [ ] Whether to bundle a default mirrorlist or always fetch live (decide at Stage 7)
+- [ ] LVM support (defer to later)
+- [ ] Dual-boot / existing partition preservation (defer)
 - [ ] UKI: mkinitcpio vs dracut decision (defer until Stage 13)
-- [ ] Secure Boot key enrollment UI (advanced only — defer until Stage 13)
-- [ ] HDD icon 🖴 may not render on all systems (monitor for reports)
+- [ ] Secure Boot key enrollment UI (defer until Stage 13)
 
 ---
 
 ## Session Commit Log
 
-| Session | Commit message                                                    |
-|---------|-------------------------------------------------------------------|
-| 1       | chore: initial project scaffold and architecture                  |
-| 2       | feat(stage-0): welcome screen and experience level                |
-| 2       | chore: restructure into installer/ package layout                 |
-| 2       | docs: wiki viewer, EFIStub/UKI, network-early decisions           |
-| 3       | feat(stage-1): network setup, wiki viewer, bug fixes              |
-| 4       | feat(stage-2): keyboard layout screen and backend                 |
-| 4       | feat(stage-3): locale selection screen and backend                |
-| 4       | feat(stage-4): disk selection screen and backend                  |
-| 4       | docs: update CLAUDE.md and README.md                              |
-| 5       | feat(stage-5): partition scheme (auto + manual)                   |
-| 5       | feat(stage-6): filesystem + LUKS encryption                       |
-| 5       | fix(style): disk card selection highlight, passphrase colours     |
-| 5       | docs: update CLAUDE.md and README.md                              |
+| Session | Commit message                                                        |
+|---------|-----------------------------------------------------------------------|
+| 1       | chore: initial project scaffold and architecture                      |
+| 2       | feat(stage-0): welcome screen and experience level                    |
+| 2       | chore: restructure into installer/ package layout                     |
+| 2       | docs: wiki viewer, EFIStub/UKI, network-early decisions               |
+| 3       | feat(stage-1): network setup, wiki viewer, bug fixes                  |
+| 4       | feat(stage-2): keyboard layout screen and backend                     |
+| 4       | feat(stage-3): locale selection screen and backend                    |
+| 4       | feat(stage-4): disk selection screen and backend                      |
+| 4       | docs: update CLAUDE.md and README.md                                  |
+| 5       | feat(stage-5): partition scheme (auto + manual)                       |
+| 5       | feat(stage-6): filesystem + LUKS encryption                           |
+| 5       | fix(style): disk card selection highlight, passphrase colours         |
+| 5       | docs: update CLAUDE.md and README.md                                  |
+| 6       | feat(stage-7): mirror selection with reflector integration            |
+| 6       | fix(mirrors): checkbox pre-selection, US first, visibility timing     |
+| 6       | docs: update CLAUDE.md and README.md                                  |
 
 ---
 
-## Next Session: Stage 7 — Mirror Selection
+## Next Session: Stage 8 — Package Selection
 
-- File: `installer/ui/mirrors.py`
-- Backend: `installer/backend/mirrors.py`
-- Uses `reflector` to fetch and rank mirrors by country/speed
-- Country selection (multi-select list, pre-selects based on locale)
-- Shows ranked mirror list with protocol, country, speed
-- Beginner: auto-select top 5 mirrors for detected country, no further config
-- Intermediate: choose countries, number of mirrors
-- Advanced: full reflector flags (protocol, age, sort method etc.)
-- Falls back to bundled mirrorlist if network unavailable
-- Saves to `state.mirrorlist` (the actual mirrorlist content) and `state.mirror_countries`
-- Upload current `main.py`, `state.py`, `base_screen.py` at start of next session
+- File: `installer/ui/packages.py`
+- Beginner: just a DE picker (None / GNOME / KDE / XFCE) with sane defaults
+- Intermediate: DE picker + common extras (e.g. Firefox, VLC, Git, CUPS)
+- Advanced: full package list editor — add/remove anything from repos
+- Always installs: base, base-devel, linux, linux-firmware, NetworkManager
+- DE selection drives `state.desktop_environment` and `state.display_manager`
+- Extra packages saved to `state.extra_packages`
+- Upload `main.py` and `state.py` at start of next session
