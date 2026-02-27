@@ -24,17 +24,39 @@ No Calamares. No archinstall. Completely original.
 
 ## Tech Stack
 
-| Component   | Choice                  |
-|-------------|-------------------------|
-| Language    | Python 3                |
-| GUI         | GTK3 (python-gobject)   |
-| Wiki viewer | WebKit2GTK              |
-| Privilege   | pkexec (polkit)         |
-| Disk ops    | parted, sgdisk, mkfs.*  |
-| Encryption  | cryptsetup (LUKS2)      |
-| Install     | pacstrap                |
-| VCS         | Git / GitLab (private)  |
-| License     | GPLv3                   |
+| Component   | Choice                          |
+|-------------|---------------------------------|
+| Language    | Python 3                        |
+| GUI         | GTK3 (python-gobject)           |
+| Wiki viewer | WebKit2GTK                      |
+| Privilege   | sudo (must run as root)         |
+| Disk ops    | parted, sgdisk, mkfs.*          |
+| Encryption  | cryptsetup (LUKS2)              |
+| Initramfs   | mkinitcpio (default) or dracut  |
+| Install     | pacstrap                        |
+| VCS         | Git / GitLab (private)          |
+| License     | GPLv3                           |
+
+---
+
+## Launching the Installer
+
+The installer must be run as root. It will exit immediately with a clear
+error message if launched without root privileges.
+
+```bash
+# From repo root — simplest
+sudo ./arch-installer
+
+# Alternatively
+sudo python3 -m installer.main
+```
+
+`arch-installer` is a top-level bash launcher script in the repo root.
+`installer/privilege.py` contains the root check called at startup.
+
+On a live ISO, the autostart mechanism launches the installer as root directly
+so no sudo prompt is needed.
 
 ---
 
@@ -51,7 +73,7 @@ No Calamares. No archinstall. Completely original.
  7  Mirror Selection
  8  Package Selection          ← DE/WM multi-select + extras chosen here
  9  Timezone
-10  System Config / Hostname
+10  System Config / Hostname   ← includes initramfs generator choice (Advanced)
 11  User Setup
 12  Review & Confirm           ← confirm everything BEFORE install
 13  Base Install               ← pacstrap runs here
@@ -86,11 +108,13 @@ No Calamares. No archinstall. Completely original.
 
 ```
 arch-installer/
+├── arch-installer          ← top-level bash launcher (sudo ./arch-installer)
 ├── CLAUDE.md
 ├── README.md
 ├── installer/
-│   ├── main.py                 ← entry point, stage controller, dry-run banner
-│   ├── state.py                ← global install state
+│   ├── main.py             ← entry point, stage controller, dry-run banner
+│   ├── privilege.py        ← root check — exits with clear message if not root
+│   ├── state.py            ← global install state
 │   ├── ui/
 │   │   ├── base_screen.py      ← base class all screens inherit
 │   │   ├── welcome.py          ← stage 0
@@ -131,31 +155,32 @@ arch-installer/
 ## State Object (installer/state.py)
 
 Key fields:
-- `experience_level`    — 'beginner'|'intermediate'|'advanced'
-- `keyboard_layout`     — e.g. 'us'
-- `locale`              — e.g. 'en_US.UTF-8'
-- `timezone`            — e.g. 'America/Los_Angeles'
-- `target_disk`         — e.g. '/dev/sda'
-- `boot_mode`           — 'uefi'|'bios'
-- `partition_table`     — 'gpt'|'mbr'
-- `partition_scheme`    — 'auto'|'manual'
-- `partitions`          — list of DiskPartition objects
-- `root_filesystem`     — 'ext4'|'btrfs'|'xfs'|'f2fs'
-- `btrfs_subvolumes`    — bool
-- `luks_passphrase`     — empty = no encryption
-- `mirrorlist`          — final mirrorlist content string
-- `desktop_environment` — comma-separated selected DE ids, e.g. 'gnome,i3' or ''
-- `display_manager`     — dm of first full DE selected, or ''
-- `base_packages`       — ['base','base-devel','linux','linux-firmware']
-- `extra_packages`      — selected extras + all DE pkgs + shell if non-bash
-- `hostname`            — e.g. 'my-arch-pc'
-- `root_password`       — string
-- `enable_ntp`          — bool, default True
-- `users`               — list of user dicts (see below)
-- `bootloader`          — 'grub'|'systemd-boot'|'refind'|'efistub'|'uki'
-- `bootloader_uki`      — bool, True if UKI selected
+- `experience_level`      — 'beginner'|'intermediate'|'advanced'
+- `keyboard_layout`       — e.g. 'us'
+- `locale`                — e.g. 'en_US.UTF-8'
+- `timezone`              — e.g. 'America/Los_Angeles'
+- `target_disk`           — e.g. '/dev/sda'
+- `boot_mode`             — 'uefi'|'bios'
+- `partition_table`       — 'gpt'|'mbr'
+- `partition_scheme`      — 'auto'|'manual'
+- `partitions`            — list of DiskPartition objects
+- `root_filesystem`       — 'ext4'|'btrfs'|'xfs'|'f2fs'
+- `btrfs_subvolumes`      — bool
+- `luks_passphrase`       — empty = no encryption
+- `mirrorlist`            — final mirrorlist content string
+- `desktop_environment`   — comma-separated selected DE ids, e.g. 'gnome,i3' or ''
+- `display_manager`       — dm of first full DE selected, or ''
+- `base_packages`         — ['base','base-devel','linux','linux-firmware']
+- `extra_packages`        — selected extras + all DE pkgs + shell if non-bash
+- `hostname`              — e.g. 'my-arch-pc'
+- `root_password`         — string
+- `enable_ntp`            — bool, default True
+- `initramfs_generator`   — 'mkinitcpio'|'dracut', default 'mkinitcpio'
+- `users`                 — list of user dicts (see below)
+- `bootloader`            — 'grub'|'systemd-boot'|'refind'|'efistub'|'uki'
+- `bootloader_uki`        — bool, True if UKI selected
 - `bootloader_uki_needs_decrypt` — bool, True if UKI + LUKS enabled
-- `dry_run`             — bool, default True
+- `dry_run`               — bool, default True
 
 User dict format:
 ```python
@@ -205,6 +230,21 @@ Set instance variables BEFORE calling `super().__init__()`.
 
 ---
 
+## System Config Screen (Stage 10)
+
+- File: `installer/ui/system_config.py`
+- Beginner: hostname + root password only
+- Intermediate: adds NTP toggle + hardware clock note
+- Advanced: adds hosts file preview + initramfs generator choice
+
+**Initramfs generator (Advanced only):**
+- Radio buttons: mkinitcpio (default, recommended) / dracut
+- Saved to `state.initramfs_generator`
+- Beginner and Intermediate always get mkinitcpio silently
+- Wiki links for both options shown in the hints panel expander
+
+---
+
 ## Review Screen (Stage 12)
 
 - File: `installer/ui/review.py`
@@ -215,6 +255,8 @@ Set instance variables BEFORE calling `super().__init__()`.
 - A confirmation checkbox must be ticked before Next is enabled
 - Next button label: "🧪 Begin Dry Run" or "🚀 Begin Installation"
 - Validates: target disk set, partitions defined, root password set, users defined
+- System card shows: Hostname, Root pwd, Locale, Keyboard, Timezone, NTP,
+  Initramfs generator, Network
 
 **Edit button jump-back flow (main.py):**
 - `ReviewScreen.__init__` accepts `on_jump` callback
@@ -235,10 +277,13 @@ Set instance variables BEFORE calling `super().__init__()`.
   1. locale — locale-gen + locale.conf
   2. vconsole — vconsole.conf (keyboard layout)
   3. timezone — /etc/localtime symlink + hwclock --systohc
-  4. initramfs — injects encrypt hook if LUKS+UKI, then mkinitcpio -P
+  4. initramfs — mkinitcpio -P or dracut --force (reads state.initramfs_generator)
+     - mkinitcpio: injects encrypt hook first if LUKS+UKI, then mkinitcpio -P
+     - dracut: runs dracut --force (auto-detects hardware, no hook config needed)
   5. bootloader — GRUB / systemd-boot / rEFInd / EFIStub / UKI install
   6. services — systemctl enable for NetworkManager, timesyncd, display manager
   7. unmount — umount -R /mnt
+- Step label for initramfs is dynamic — shows actual generator command at runtime
 - Done page: dry run → "Close" button; real install → "🔁 Reboot Now" button
   (calls `systemctl reboot` or falls back to `subprocess.run(["reboot"])`)
 - Back button disabled — no going back once post-install config starts
@@ -311,9 +356,9 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
-- [ ] UKI: mkinitcpio vs dracut — backend not yet wired (Stage 14 UI complete)
 - [ ] Secure Boot key enrollment — deferred post-bootloader
-- [ ] pkexec privilege escalation not yet wired up
+- [ ] ISO autostart — systemd service / getty autologin + xinit to launch installer
+- [ ] VM smoke test with dry_run = False not yet performed
 
 ---
 
@@ -350,3 +395,7 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 | 10      | fix(network): move wiki links to panel, remove inline widget                 |
 | 10      | docs: update CLAUDE.md and README.md                                         |
 | 11      | feat(stages-12-15): review, complete/reboot; fix stage order; multi-select DE|
+| 12      | feat(privilege): root check + arch-installer launcher script                 |
+| 12      | feat(stage-10): initramfs generator choice — mkinitcpio/dracut (Advanced)    |
+| 12      | feat(complete): branch initramfs step on state.initramfs_generator           |
+| 12      | docs: update CLAUDE.md and README.md                                         |

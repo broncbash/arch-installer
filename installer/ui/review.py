@@ -230,6 +230,7 @@ class ReviewScreen(BaseScreen):
         r = self._add_row(grid, r, "Keyboard",   s.keyboard_layout)
         r = self._add_row(grid, r, "Timezone",   s.timezone)
         r = self._add_row(grid, r, "NTP",        "Enabled" if s.enable_ntp else "Disabled")
+        r = self._add_row(grid, r, "Initramfs",  getattr(s, "initramfs_generator", "mkinitcpio"))
         r = self._add_row(grid, r, "Network",
                           "Connected" if s.network_ok else
                           "Skipped" if s.network_skipped else "Not connected")

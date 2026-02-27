@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# arch-installer — launch the Arch Linux graphical installer.
+# Must be run as root (sudo arch-installer or from a live ISO root shell).
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 -m installer.main "$@"

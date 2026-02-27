@@ -34,7 +34,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Package selection** — 9 DE/WM options with multi-select (tick as many as you
   want), curated extras checklist, and free-form package entry
 - **Timezone** — searchable list with live clock preview, auto-detected default
-- **System config** — hostname validation, root password with strength indicator, NTP
+- **System config** — hostname validation, root password with strength indicator,
+  NTP toggle, and initramfs generator choice (mkinitcpio / dracut) for Advanced users
 - **User setup** — username, password, sudo, shell picker, group checkboxes
 - **Review & Confirm** — full summary of every selection before anything touches
   disk; ✏ Edit buttons jump directly back to any stage and return automatically
@@ -42,7 +43,8 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Bootloader selection** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; options
   filtered by experience level with live card switching
 - **Complete / Reboot** — post-install chroot config: locale, keyboard, timezone,
-  initramfs, bootloader install, service enablement, unmount, reboot
+  initramfs (mkinitcpio or dracut), bootloader install, service enablement,
+  unmount, reboot
 - **Dry-run mode** — yellow banner + full simulation so you can test safely anywhere
 
 ---
@@ -75,9 +77,13 @@ All 16 stages complete. 🎉
 ## Dependencies
 
 ```bash
-sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted \
-               reflector sgdisk cryptsetup btrfs-progs
+sudo pacman -S python python-gobject gtk3 webkit2gtk parted \
+               reflector sgdisk cryptsetup btrfs-progs dracut
 ```
+
+> `dracut` is optional — only needed if you select it as your initramfs generator
+> on the System Config screen (Advanced mode). mkinitcpio is installed as part of
+> the base Arch system automatically.
 
 ---
 
@@ -86,8 +92,12 @@ sudo pacman -S python python-gobject gtk3 webkit2gtk polkit parted \
 ```bash
 git clone git@gitlab.com:broncbash/arch-installer.git
 cd arch-installer
-python3 -m installer.main
+sudo ./arch-installer
 ```
+
+The installer must be run as root. It will exit with a clear error message if
+launched without `sudo`. On a live ISO, root is already the active user so no
+`sudo` is needed.
 
 The installer starts in **dry-run mode** by default — a yellow banner is shown and
 no disk operations are performed. To perform a real install, set
@@ -122,6 +132,11 @@ for your user (zsh, fish) is automatically included in the pacstrap package list
 - Beginner sees only the safest options with plain-language explanations
 - Intermediate unlocks more choices with brief technical context
 - Advanced exposes everything with full technical detail
+
+**Initramfs generator** is an Advanced-only choice on the System Config screen.
+Beginner and Intermediate users always get mkinitcpio (the Arch default) silently.
+Advanced users can switch to dracut via radio buttons. The choice is reflected in
+the Review summary and drives the actual command run in Stage 15.
 
 **Arch Wiki links** are available on every screen via a collapsible expander
 at the bottom of the hints panel. Collapsed by default so the hint text always

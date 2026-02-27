@@ -11,7 +11,7 @@ Steps handled here (everything pacstrap did NOT cover):
   2.  locale.conf             — write LANG= to /etc/locale.conf
   3.  vconsole.conf           — write KEYMAP= to /etc/vconsole.conf
   4.  timezone                — symlink /etc/localtime, hwclock --systohc
-  5.  mkinitcpio              — generate initramfs (mkinitcpio -P)
+  5.  initramfs               — generate initramfs (mkinitcpio -P or dracut)
   6.  bootloader              — install GRUB / systemd-boot / rEFInd
   7.  enable services         — NetworkManager, NTP, display manager
   8.  unmount                 — umount -R /mnt
@@ -34,16 +34,26 @@ from installer.backend.runner import run_cmd, run_chroot, run_script
 MOUNTPOINT = "/mnt"
 
 # ── Step definitions ──────────────────────────────────────────────────────────
+# Note: the initramfs label is updated at runtime in _build_ready_page() and
+# _build_running_page() to reflect the chosen generator.
 
 COMPLETE_STEPS = [
     ("locale",      "Generate locale"),
     ("vconsole",    "Set keyboard layout"),
     ("timezone",    "Configure timezone"),
-    ("initramfs",   "Generate initramfs  (mkinitcpio -P)"),
+    ("initramfs",   "Generate initramfs"),   # label refined at runtime
     ("bootloader",  "Install bootloader"),
     ("services",    "Enable system services"),
     ("unmount",     "Unmount filesystems"),
 ]
+
+
+def _initramfs_label(state) -> str:
+    """Return a human-readable label for the initramfs step."""
+    gen = getattr(state, "initramfs_generator", "mkinitcpio")
+    if gen == "dracut":
+        return "Generate initramfs  (dracut --force)"
+    return "Generate initramfs  (mkinitcpio -P)"
 
 
 # ── Backend step functions ────────────────────────────────────────────────────
@@ -68,7 +78,7 @@ def _step_locale(state) -> tuple:
     logs.append(out)
 
     # Write /etc/locale.conf
-    lang = locale.split(".")[0]  # e.g. en_US.UTF-8 → en_US
+    locale = state.locale or "en_US.UTF-8"
     ok, out = run_script(
         f"echo 'LANG={locale}' > {MOUNTPOINT}/etc/locale.conf",
         state, "Write /etc/locale.conf"
@@ -115,28 +125,42 @@ def _step_timezone(state) -> tuple:
 
 
 def _step_initramfs(state) -> tuple:
-    """Generate the initramfs with mkinitcpio -P."""
-    # If LUKS + UKI, the encrypt hook must be present in mkinitcpio.conf.
-    # We add it here before running mkinitcpio.
+    """Generate the initramfs using mkinitcpio or dracut."""
     logs = []
-    if state.bootloader_uki_needs_decrypt:
+    gen = getattr(state, "initramfs_generator", "mkinitcpio")
+
+    if gen == "dracut":
+        # dracut writes the initramfs directly — --force overwrites any existing image
         ok, out = run_chroot(
-            ["sed", "-i",
-             "s/^HOOKS=(.*block/& encrypt/",
-             "/etc/mkinitcpio.conf"],
-            state, "Add encrypt hook to mkinitcpio.conf"
+            ["dracut", "--force"],
+            state, "Generate initramfs (dracut --force)"
         )
         if not ok:
             return False, out
         logs.append(out)
 
-    ok, out = run_chroot(
-        ["mkinitcpio", "-P"],
-        state, "Generate initramfs (mkinitcpio -P)"
-    )
-    if not ok:
-        return False, out
-    logs.append(out)
+    else:
+        # mkinitcpio path (default)
+        # If LUKS + UKI, the encrypt hook must be present in mkinitcpio.conf.
+        if state.bootloader_uki_needs_decrypt:
+            ok, out = run_chroot(
+                ["sed", "-i",
+                 "s/^HOOKS=(.*block/& encrypt/",
+                 "/etc/mkinitcpio.conf"],
+                state, "Add encrypt hook to mkinitcpio.conf"
+            )
+            if not ok:
+                return False, out
+            logs.append(out)
+
+        ok, out = run_chroot(
+            ["mkinitcpio", "-P"],
+            state, "Generate initramfs (mkinitcpio -P)"
+        )
+        if not ok:
+            return False, out
+        logs.append(out)
+
     return True, "\n".join(logs)
 
 
@@ -328,6 +352,7 @@ class CompleteScreen(BaseScreen):
     WIKI_LINKS = [
         ("Installation guide — chroot", "https://wiki.archlinux.org/title/Installation_guide#Configure_the_system"),
         ("mkinitcpio",                  "https://wiki.archlinux.org/title/Mkinitcpio"),
+        ("dracut",                      "https://wiki.archlinux.org/title/Dracut"),
         ("GRUB",                        "https://wiki.archlinux.org/title/GRUB"),
         ("systemd-boot",                "https://wiki.archlinux.org/title/Systemd-boot"),
     ]
@@ -348,6 +373,7 @@ class CompleteScreen(BaseScreen):
 
     def get_hints(self) -> dict:
         dry = "  [DRY RUN]" if self.state.dry_run else ""
+        gen = getattr(self.state, "initramfs_generator", "mkinitcpio")
         return {
             "beginner": (
                 f"🎉  Almost done!{dry}\n\n"
@@ -363,9 +389,9 @@ class CompleteScreen(BaseScreen):
             ),
             "intermediate": (
                 f"🎉  Final configuration{dry}\n\n"
-                "Steps: locale-gen → locale.conf → vconsole.conf → "
-                "localtime symlink → hwclock → mkinitcpio -P → "
-                "bootloader install → systemctl enable → umount -R /mnt\n\n"
+                f"Steps: locale-gen → locale.conf → vconsole.conf → "
+                f"localtime symlink → hwclock → {gen} → "
+                f"bootloader install → systemctl enable → umount -R /mnt\n\n"
                 "After rebooting, remove the installation media so the "
                 "system boots from the installed disk."
             ),
@@ -373,10 +399,16 @@ class CompleteScreen(BaseScreen):
                 f"🎉  Post-install chroot config{dry}\n\n"
                 "locale-gen reads /etc/locale.gen; LANG is written to "
                 "/etc/locale.conf. KEYMAP to /etc/vconsole.conf.\n\n"
-                "mkinitcpio -P regenerates all presets. If LUKS + UKI is "
-                "selected the encrypt hook is injected into "
-                "/etc/mkinitcpio.conf first.\n\n"
-                "Bootloader: GRUB (grub-install + grub-mkconfig), "
+                f"Initramfs generator: {gen}. "
+                + (
+                    "mkinitcpio -P regenerates all presets. If LUKS + UKI is "
+                    "selected the encrypt hook is injected into "
+                    "/etc/mkinitcpio.conf first."
+                    if gen == "mkinitcpio" else
+                    "dracut --force regenerates the initramfs image. "
+                    "dracut auto-detects hardware — no manual hook configuration needed."
+                ) +
+                "\n\nBootloader: GRUB (grub-install + grub-mkconfig), "
                 "systemd-boot (bootctl install + loader entries), "
                 "rEFInd (refind-install), EFIStub (efibootmgr), "
                 "UKI (mkinitcpio --uki).\n\n"
@@ -416,12 +448,14 @@ class CompleteScreen(BaseScreen):
         heading.set_xalign(0)
         inner.pack_start(heading, False, False, 0)
 
-        for _step_id, label in COMPLETE_STEPS:
+        for step_id, label in COMPLETE_STEPS:
+            # Use the runtime-refined label for the initramfs step
+            display_label = _initramfs_label(self.state) if step_id == "initramfs" else label
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             dot = Gtk.Label(label="◦")
             dot.get_style_context().add_class("detail-key")
             row.pack_start(dot, False, False, 0)
-            lbl = Gtk.Label(label=label)
+            lbl = Gtk.Label(label=display_label)
             lbl.get_style_context().add_class("detail-value")
             lbl.set_xalign(0)
             row.pack_start(lbl, True, True, 0)
@@ -453,6 +487,7 @@ class CompleteScreen(BaseScreen):
             ("Locale",      s.locale),
             ("Keyboard",    s.keyboard_layout),
             ("Timezone",    s.timezone),
+            ("Initramfs",   getattr(s, "initramfs_generator", "mkinitcpio")),
             ("Bootloader",  s.bootloader),
             ("Services",    self._services_summary()),
         ]
@@ -498,12 +533,13 @@ class CompleteScreen(BaseScreen):
         steps_box.set_margin_bottom(10)
 
         for step_id, label in COMPLETE_STEPS:
+            display_label = _initramfs_label(self.state) if step_id == "initramfs" else label
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             icon = Gtk.Label(label="○")
             icon.set_width_chars(2)
             self._step_icons[step_id] = icon
             row.pack_start(icon, False, False, 0)
-            lbl = Gtk.Label(label=label)
+            lbl = Gtk.Label(label=display_label)
             lbl.get_style_context().add_class("detail-value")
             lbl.set_xalign(0)
             row.pack_start(lbl, True, True, 0)
@@ -640,7 +676,8 @@ class CompleteScreen(BaseScreen):
     def _worker(self):
         total = len(COMPLETE_STEPS)
         for i, (step_id, label) in enumerate(COMPLETE_STEPS):
-            GLib.idle_add(self._set_step_running, step_id, i, total, label)
+            display_label = _initramfs_label(self.state) if step_id == "initramfs" else label
+            GLib.idle_add(self._set_step_running, step_id, i, total, display_label)
             ok, output = run_complete_step(step_id, self.state)
             if output:
                 GLib.idle_add(self._append_log, output + "\n")
@@ -703,7 +740,8 @@ class CompleteScreen(BaseScreen):
         def _retry():
             for i in range(start_idx, total):
                 step_id, label = COMPLETE_STEPS[i]
-                GLib.idle_add(self._set_step_running, step_id, i, total, label)
+                display_label = _initramfs_label(self.state) if step_id == "initramfs" else label
+                GLib.idle_add(self._set_step_running, step_id, i, total, display_label)
                 ok, output = run_complete_step(step_id, self.state)
                 if output:
                     GLib.idle_add(self._append_log, output + "\n")

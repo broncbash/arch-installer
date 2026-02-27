@@ -10,6 +10,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
+from installer.privilege import require_root
 from installer.state import InstallState
 from installer.ui.welcome import WelcomeScreen
 from installer.ui.network import NetworkScreen
@@ -191,6 +192,7 @@ class InstallerWindow(Gtk.Window):
         dlg.destroy()
 
 def main():
+    require_root()
     _load_css()
     win = InstallerWindow()
     Gtk.main()

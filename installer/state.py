@@ -77,6 +77,7 @@ class InstallState:
     hostname: str = "archlinux"
     root_password: str = ""
     enable_ntp: bool = True          # enable systemd-timesyncd
+    initramfs_generator: str = "mkinitcpio"  # 'mkinitcpio' | 'dracut'
 
     # ── Users ─────────────────────────────────────────────────────────────────
     users: List[Dict] = field(default_factory=list)
@@ -125,6 +126,7 @@ class InstallState:
             f"Bootloader       : {self.bootloader}",
             f"Boot Mode        : {self.boot_mode.upper()}",
             f"Hostname         : {self.hostname}",
+            f"Initramfs        : {self.initramfs_generator}",
             f"Desktop          : {self.desktop_environment or 'None (base only)'}",
             f"Network Manager  : {self.network_manager}",
             f"Users            : {', '.join(u['username'] for u in self.users)}",

@@ -8,12 +8,14 @@ Covers hostname and root password. Clean and simple.
 Experience level behaviour:
   Beginner:     Hostname + root password. Plain language, strong guardrails.
   Intermediate: Same + NTP toggle and hardware clock explanation.
-  Advanced:     Same + hosts file preview, locale.conf note.
+  Advanced:     Same + hosts file preview, locale.conf note,
+                and initramfs generator choice (mkinitcpio / dracut).
 
 Saves to:
-    state.hostname        — e.g. 'my-arch-pc'
-    state.root_password   — root account password string
-    state.enable_ntp      — bool (new field, default True)
+    state.hostname              — e.g. 'my-arch-pc'
+    state.root_password         — root account password string
+    state.enable_ntp            — bool (default True)
+    state.initramfs_generator   — 'mkinitcpio' | 'dracut' (default 'mkinitcpio')
 """
 
 import re
@@ -58,10 +60,13 @@ class SystemConfigScreen(BaseScreen):
         ("Hostname",         "https://wiki.archlinux.org/title/Network_configuration#Set_the_hostname"),
         ("Root password",    "https://wiki.archlinux.org/title/Users_and_groups#Root_account"),
         ("systemd-timesyncd","https://wiki.archlinux.org/title/Systemd-timesyncd"),
+        ("mkinitcpio",       "https://wiki.archlinux.org/title/Mkinitcpio"),
+        ("dracut",           "https://wiki.archlinux.org/title/Dracut"),
     ]
 
     def __init__(self, state, on_next, on_back):
         self._enable_ntp = getattr(state, "enable_ntp", True)
+        self._initramfs_generator = getattr(state, "initramfs_generator", "mkinitcpio")
 
         super().__init__(state=state, on_next=on_next, on_back=on_back)
 
@@ -96,6 +101,10 @@ class SystemConfigScreen(BaseScreen):
                 "max 253 chars total. Hyphens allowed but not at start/end.\n\n"
                 "/etc/hosts will have 127.0.0.1 and ::1 entries pointing to "
                 "your hostname for loopback resolution.\n\n"
+                "mkinitcpio is the traditional Arch initramfs generator. "
+                "dracut is a more portable alternative used by many other "
+                "distros — choose it if you need feature parity with "
+                "Fedora/RHEL tooling or prefer its modular design.\n\n"
                 "timesyncd uses pool.ntp.org by default. Edit "
                 "/etc/systemd/timesyncd.conf post-install for custom servers."
             ),
@@ -332,16 +341,17 @@ class SystemConfigScreen(BaseScreen):
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_start(14)
         box.set_margin_end(14)
         box.set_margin_top(12)
         box.set_margin_bottom(12)
 
-        heading = Gtk.Label(label="Files that will be written:")
-        heading.get_style_context().add_class("section-heading")
-        heading.set_xalign(0)
-        box.pack_start(heading, False, False, 0)
+        # ── Hosts file preview ────────────────────────────────────────────────
+        hosts_heading = Gtk.Label(label="Files that will be written:")
+        hosts_heading.get_style_context().add_class("section-heading")
+        hosts_heading.set_xalign(0)
+        box.pack_start(hosts_heading, False, False, 0)
 
         self._hosts_preview = Gtk.Label()
         self._hosts_preview.get_style_context().add_class("detail-value")
@@ -351,8 +361,58 @@ class SystemConfigScreen(BaseScreen):
         self._update_hosts_preview()
         box.pack_start(self._hosts_preview, False, False, 0)
 
+        # ── Separator ─────────────────────────────────────────────────────────
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_margin_top(4)
+        sep.set_margin_bottom(4)
+        box.pack_start(sep, False, False, 0)
+
+        # ── Initramfs generator ───────────────────────────────────────────────
+        initramfs_heading = Gtk.Label(label="Initramfs generator:")
+        initramfs_heading.get_style_context().add_class("section-heading")
+        initramfs_heading.set_xalign(0)
+        box.pack_start(initramfs_heading, False, False, 0)
+
+        initramfs_note = Gtk.Label(
+            label="mkinitcpio is the Arch default. dracut is a portable "
+                  "alternative used by Fedora and other distributions."
+        )
+        initramfs_note.get_style_context().add_class("detail-key")
+        initramfs_note.set_xalign(0)
+        initramfs_note.set_line_wrap(True)
+        box.pack_start(initramfs_note, False, False, 0)
+
+        # Radio buttons — mkinitcpio is the group leader
+        self._radio_mkinitcpio = Gtk.RadioButton.new_with_label(
+            None, "mkinitcpio  (recommended — Arch default)"
+        )
+        self._radio_mkinitcpio.get_style_context().add_class("detail-value")
+        box.pack_start(self._radio_mkinitcpio, False, False, 0)
+
+        self._radio_dracut = Gtk.RadioButton.new_with_label_from_widget(
+            self._radio_mkinitcpio, "dracut  (portable, modular alternative)"
+        )
+        self._radio_dracut.get_style_context().add_class("detail-value")
+        box.pack_start(self._radio_dracut, False, False, 0)
+
+        # Set initial state from state object
+        if self._initramfs_generator == "dracut":
+            self._radio_dracut.set_active(True)
+        else:
+            self._radio_mkinitcpio.set_active(True)
+
+        # Connect signals after setting initial state to avoid spurious callbacks
+        self._radio_mkinitcpio.connect("toggled", self._on_initramfs_toggled)
+        self._radio_dracut.connect("toggled", self._on_initramfs_toggled)
+
         frame.add(box)
         return frame
+
+    def _on_initramfs_toggled(self, btn):
+        if self._radio_dracut.get_active():
+            self._initramfs_generator = "dracut"
+        else:
+            self._initramfs_generator = "mkinitcpio"
 
     def _update_hosts_preview(self):
         if not hasattr(self, "_hosts_preview"):
@@ -453,6 +513,7 @@ class SystemConfigScreen(BaseScreen):
         return True, ""
 
     def on_next(self):
-        self.state.hostname      = self._hostname_entry.get_text().strip()
-        self.state.root_password = self._pw_entry.get_text()
-        self.state.enable_ntp    = self._enable_ntp
+        self.state.hostname              = self._hostname_entry.get_text().strip()
+        self.state.root_password         = self._pw_entry.get_text()
+        self.state.enable_ntp            = self._enable_ntp
+        self.state.initramfs_generator   = self._initramfs_generator
