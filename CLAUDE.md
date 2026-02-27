@@ -10,7 +10,7 @@ A full-featured, GTK3-based graphical Arch Linux installer built from scratch in
 No Calamares. No archinstall. Completely original.
 
 **GitLab repo:** https://gitlab.com/broncbash/arch-installer (private until public release)
-**Local repo:**   ~/arch-installer
+**Local repo:**   /path/to/nas/arch-installer  ← moved from ~/arch-installer to NAS
 
 ### Design Philosophy
 - Follows Arch Wiki installation standards exactly
@@ -43,7 +43,6 @@ No Calamares. No archinstall. Completely original.
 
 The installer must be run as root. It will exit immediately with a clear
 error message if launched without root privileges.
-
 ```bash
 # From repo root — simplest
 sudo ./arch-installer
@@ -61,7 +60,6 @@ so no sudo prompt is needed.
 ---
 
 ## Stage Order (all choices BEFORE install — critical)
-
 ```
  0  Welcome / Experience Level
  1  Network Setup
@@ -105,7 +103,6 @@ so no sudo prompt is needed.
 ---
 
 ## File Structure
-
 ```
 arch-installer/
 ├── arch-installer          ← top-level bash launcher (sudo ./arch-installer)
@@ -292,7 +289,6 @@ Set instance variables BEFORE calling `super().__init__()`.
 ---
 
 ## runner.py API
-
 ```python
 from installer.backend.runner import run_cmd, run_chroot, run_script
 
@@ -352,13 +348,63 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 
 ---
 
+## arch-installer Launcher Script
+
+The launcher script auto-installs GTK dependencies and expands cowspace before
+launching. However, the correct long-term solution is a custom ISO (see Next Phase
+below) so this is only needed as a fallback.
+
+Key things the launcher does:
+- Checks for root, exits cleanly if not
+- Checks it's running on Arch Linux
+- Expands cowspace to 2G on live ISO before installing packages
+- Detects and installs only missing dependencies via pacman
+- Verifies `gi` is importable before launching
+- Changes to repo directory so module paths are correct
+
+---
+
 ## Known Issues / Deferred
 
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
 - [ ] Secure Boot key enrollment — deferred post-bootloader
-- [ ] ISO autostart — systemd service / getty autologin + xinit to launch installer
-- [ ] VM smoke test with dry_run = False not yet performed
+- [ ] VM smoke test with dry_run = False not yet completed — blocked by live ISO
+      Python version mismatch (ISO ships Python 3.14, packages built for 3.13)
+- [ ] Full end-to-end install test not yet performed
+
+---
+
+## Next Phase — Custom ISO with archiso
+
+**Goal:** A custom Arch ISO that boots directly into the GTK installer with all
+dependencies pre-installed. No manual pacman installs, no cowspace hacks, no
+Python version mismatches. Boot and the installer starts automatically.
+
+**Why:** The standard Arch live ISO is a moving target — Python version on the ISO
+frequently mismatches the python-gobject package on the mirrors, making it
+impossible to reliably install GTK deps at runtime. Baking everything into a
+custom ISO solves this permanently.
+
+**Plan:**
+1. Install `archiso` on dev machine: `pacman -S archiso`
+2. Copy the baseline profile: `cp -r /usr/share/archiso/configs/releng/ ~/arch-iso-profile`
+3. Add deps to `packages.x86_64`:
+   - python
+   - python-gobject
+   - python-cairo
+   - gtk3
+   - webkit2gtk
+   - gobject-introspection
+4. Copy installer repo into the ISO filesystem via `airootfs/`
+5. Add a systemd service or getty autologin + xinit to autostart the installer as root on boot
+6. Build: `mkarchiso -v -o ~/iso-out ~/arch-iso-profile`
+7. Test in VM
+
+**Autostart mechanism** (to be designed):
+- Option A: systemd service that runs `./arch-installer` after graphical target
+- Option B: getty autologin as root → `.bash_profile` launches installer
+- Option C: `.desktop` autostart entry if a minimal WM is included
 
 ---
 
@@ -384,7 +430,7 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 | 8       | feat(stage-10): timezone with live clock                                     |
 | 8       | feat(stage-11): system config — hostname, root password, NTP                 |
 | 8       | fix: password strength colors, NTP checkbox visibility                       |
-| 8       | docs: update CLAUDE.md and README.md                                         |
+| 8       : docs: update CLAUDE.md and README.md                                         |
 | 9       | refactor: reorder stages — all choices before pacstrap                       |
 | 9       | feat(stage-11): user setup — username, password, sudo, shell, groups         |
 | 9       | fix(filesystem): visibility timing bug on beginner level                     |
@@ -399,3 +445,6 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 | 12      | feat(stage-10): initramfs generator choice — mkinitcpio/dracut (Advanced)    |
 | 12      | feat(complete): branch initramfs step on state.initramfs_generator           |
 | 12      | docs: update CLAUDE.md and README.md                                         |
+| 13      | fix(launcher): auto-install GTK deps and expand cowspace on live ISO         |
+| 13      | chore: move repo from ~/arch-installer to NAS                                |
+| 13      | docs: update CLAUDE.md — custom ISO plan, Python version issue, next phase   |
