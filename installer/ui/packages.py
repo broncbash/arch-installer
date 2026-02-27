@@ -15,9 +15,9 @@ The base package set (base, base-devel, linux, linux-firmware) is
 always installed and is not shown here — it's implicit.
 
 Saves to:
-    state.desktop_environment  — 'gnome' | 'kde' | 'xfce' | 'sway' |
-                                  'i3' | 'bspwm' | 'hyprland' | 'niri' | ''
-    state.display_manager      — 'gdm' | 'sddm' | 'lightdm' | ''
+    state.desktop_environment  — comma-separated selected DE ids, e.g. 'gnome,i3'
+                                  or '' for base only
+    state.display_manager      — dm of first full DE selected, or '' if none
     state.extra_packages       — list of additional package name strings
 """
 
@@ -251,7 +251,9 @@ class PackageScreen(BaseScreen):
 
     def __init__(self, state, on_next, on_back):
         # Restore previous selections when coming Back
-        self._selected_de  = state.desktop_environment  # '' | 'gnome' | 'kde' | 'xfce' | 'sway'
+        saved = state.desktop_environment or ''
+        self._selected_des = set(x for x in saved.split(',') if x)  # set of de_ids
+        self._de_checks    = {}   # de_id → CheckButton (the card checkbox)
         self._extra_pkgs   = list(state.extra_packages)  # mutable copy
         self._de_cards     = {}   # de_id → EventBox card widget
         self._extra_checks = {}   # pkg_str → CheckButton
@@ -360,8 +362,8 @@ class PackageScreen(BaseScreen):
 
         frame.add(box)
 
-        # Apply initial selection highlight
-        self._highlight_de(self._selected_de)
+        # Apply initial selection highlights
+        self._update_de_highlights()
 
         return frame
 
@@ -369,10 +371,28 @@ class PackageScreen(BaseScreen):
         eb = Gtk.EventBox()
         eb.get_style_context().add_class("level-card")
 
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+
+        # Top row: checkbox left-aligned
+        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        top_row.set_margin_start(6)
+        top_row.set_margin_top(6)
+
+        chk = Gtk.CheckButton()
+        chk.set_active(de["id"] in self._selected_des)
+        chk.connect("toggled", self._on_de_check_toggled, de["id"])
+        # Prevent the checkbox click from also firing the EventBox handler
+        chk.connect("button-press-event", lambda w, e: e.get_event_type().value_nick != "button-press")
+        top_row.pack_start(chk, False, False, 0)
+        self._de_checks[de["id"]] = chk
+
+        outer.pack_start(top_row, False, False, 0)
+
+        # Main content
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         inner.set_margin_start(10)
         inner.set_margin_end(10)
-        inner.set_margin_top(10)
+        inner.set_margin_top(2)
         inner.set_margin_bottom(10)
 
         icon = Gtk.Label(label=de["icon"])
@@ -390,7 +410,8 @@ class PackageScreen(BaseScreen):
         sub.set_line_wrap(True)
         inner.pack_start(sub, False, False, 0)
 
-        eb.add(inner)
+        outer.pack_start(inner, False, False, 0)
+        eb.add(outer)
         eb.connect("button-press-event", self._on_de_clicked, de["id"])
         eb.connect("enter-notify-event",
                    lambda w, e: w.get_style_context().add_class("hover"))
@@ -400,22 +421,39 @@ class PackageScreen(BaseScreen):
         return eb
 
     def _on_de_clicked(self, widget, event, de_id):
-        self._selected_de = de_id
-        self._highlight_de(de_id)
-        # Update description
+        # Toggle selection and update the checkbox to match
+        if de_id in self._selected_des:
+            self._selected_des.discard(de_id)
+        else:
+            self._selected_des.add(de_id)
+        # Sync the checkbox without re-triggering _on_de_check_toggled
+        chk = self._de_checks.get(de_id)
+        if chk:
+            chk.handler_block_by_func(self._on_de_check_toggled)
+            chk.set_active(de_id in self._selected_des)
+            chk.handler_unblock_by_func(self._on_de_check_toggled)
+        self._update_de_highlights()
+        # Show description for clicked card
         de = next(d for d in DE_OPTIONS if d["id"] == de_id)
         self._de_desc.set_text(de["desc"])
 
-    def _highlight_de(self, de_id):
+    def _on_de_check_toggled(self, chk, de_id):
+        if chk.get_active():
+            self._selected_des.add(de_id)
+        else:
+            self._selected_des.discard(de_id)
+        self._update_de_highlights()
+        # Show description for the toggled card
+        de = next(d for d in DE_OPTIONS if d["id"] == de_id)
+        if hasattr(self, "_de_desc"):
+            self._de_desc.set_text(de["desc"])
+
+    def _update_de_highlights(self):
         for did, card in self._de_cards.items():
             ctx = card.get_style_context()
-            if did == de_id:
+            if did in self._selected_des:
                 ctx.add_class("selected")
                 ctx.remove_class("hover")
-                # Show description for pre-selected card
-                de = next(d for d in DE_OPTIONS if d["id"] == did)
-                if hasattr(self, "_de_desc"):
-                    self._de_desc.set_text(de["desc"])
             else:
                 ctx.remove_class("selected")
 
@@ -656,13 +694,23 @@ class PackageScreen(BaseScreen):
         return True, ""
 
     def on_next(self):
-        de = next((d for d in DE_OPTIONS if d["id"] == self._selected_de), DE_OPTIONS[0])
+        # Collect packages from all selected DEs in DE_OPTIONS order
+        de_pkgs = []
+        dm = ""
+        selected_ids = []
+        for de in DE_OPTIONS:
+            if de["id"] in self._selected_des:
+                selected_ids.append(de["id"])
+                for p in de["packages"]:
+                    if p not in de_pkgs:
+                        de_pkgs.append(p)
+                # Use the display manager of the first full DE that has one
+                if not dm and de["dm"]:
+                    dm = de["dm"]
 
-        self.state.desktop_environment = de["id"]
-        self.state.display_manager     = de["dm"]
+        self.state.desktop_environment = ",".join(selected_ids)
+        self.state.display_manager     = dm
 
-        # Merge DE packages into extra_packages if a DE was chosen
-        de_pkgs = de["packages"]
-        # Keep existing extras, add DE packages, deduplicate, preserve order
+        # Merge DE packages + user extras, deduplicated, preserving order
         combined = de_pkgs + [p for p in self._extra_pkgs if p not in de_pkgs]
         self.state.extra_packages = combined

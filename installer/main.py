@@ -25,6 +25,8 @@ from installer.ui.timezone import TimezoneScreen
 from installer.ui.system_config import SystemConfigScreen
 from installer.ui.users import UsersScreen
 from installer.ui.bootloader import BootloaderScreen
+from installer.ui.review import ReviewScreen
+from installer.ui.complete import CompleteScreen
 
 def _load_css():
     provider = Gtk.CssProvider()
@@ -55,8 +57,10 @@ class InstallerWindow(Gtk.Window):
         ("Timezone",       lambda: TimezoneScreen),
         ("System Config",  lambda: SystemConfigScreen),
         ("Users",          lambda: UsersScreen),
+        ("Review",         lambda: ReviewScreen),
         ("Install",        lambda: InstallScreen),
         ("Bootloader",     lambda: BootloaderScreen),
+        ("Complete",       lambda: CompleteScreen),
     ]
 
     def __init__(self):
@@ -69,6 +73,7 @@ class InstallerWindow(Gtk.Window):
 
         self.state = InstallState()
         self._stage_index = 0
+        self._return_to_review = False  # set by _jump_to_stage; skips forward on Next
 
         # Outer vertical box — banner on top, deck below
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -107,13 +112,34 @@ class InstallerWindow(Gtk.Window):
         _label, cls_factory = self.STAGE_CLASSES[self._stage_index]
         cls = cls_factory()
         on_back = self._go_back if self._stage_index > 0 else None
-        screen = cls(state=self.state, on_next=self._advance, on_back=on_back)
+        # ReviewScreen accepts an on_jump callback for direct stage navigation
+        if cls is ReviewScreen:
+            screen = cls(state=self.state, on_next=self._advance,
+                         on_back=on_back, on_jump=self._jump_to_stage)
+        else:
+            screen = cls(state=self.state, on_next=self._advance, on_back=on_back)
         screen.show_all()
         self._deck.add_named(screen, str(self._stage_index))
         # Defer the switch so GTK can realize the widget first
         GLib.idle_add(self._deck.set_visible_child_name, str(self._stage_index))
 
     def _advance(self):
+        # If the user jumped back from Review to edit something, skip straight
+        # back to Review once they click Next on the edited screen.
+        review_idx = next(
+            i for i, (label, _) in enumerate(self.STAGE_CLASSES)
+            if label == "Review"
+        )
+        if self._return_to_review and self._stage_index < review_idx:
+            self._return_to_review = False
+            # Clear any stale Review card so it rebuilds with updated state
+            child = self._deck.get_child_by_name(str(review_idx))
+            if child:
+                self._deck.remove(child)
+                child.destroy()
+            self._stage_index = review_idx
+            self._load_current_stage()
+            return
         next_idx = self._stage_index + 1
         if next_idx >= len(self.STAGE_CLASSES):
             self._show_end_dialog()
@@ -135,26 +161,32 @@ class InstallerWindow(Gtk.Window):
             self._deck.remove(child)
             child.destroy()
 
+    def _jump_to_stage(self, target_index: int):
+        """Jump directly to a specific stage (used by Review screen Edit buttons).
+        Sets _return_to_review so the next Next click snaps back to Review."""
+        if target_index < 0 or target_index >= len(self.STAGE_CLASSES):
+            return
+        # Clear the target stage card so it rebuilds with current state
+        child = self._deck.get_child_by_name(str(target_index))
+        if child:
+            self._deck.remove(child)
+            child.destroy()
+        self._return_to_review = True
+        self._deck.set_transition_type(Gtk.StackTransitionType.SLIDE_RIGHT)
+        self._stage_index = target_index
+        self._load_current_stage()
+        self._deck.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT)
+
     def _show_end_dialog(self):
+        """Fallback — should not be reached now that CompleteScreen is wired in."""
         dlg = Gtk.MessageDialog(
             transient_for=self,
             flags=0,
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.OK,
-            text="Stage complete",
+            text="All stages complete",
         )
-        dlg.format_secondary_text(
-            f"Experience level : {self.state.experience_level}\n"
-            f"Keyboard layout  : {self.state.keyboard_layout}\n"
-            f"Locale           : {self.state.locale}\n"
-            f"Disk             : {self.state.target_disk}\n"
-            f"Boot mode        : {self.state.boot_mode}\n"
-            f"Partition scheme : {self.state.partition_scheme}\n"
-            f"Filesystem       : {self.state.root_filesystem}\n"
-            f"Encryption       : {'Yes' if self.state.luks_passphrase else 'No'}\n"
-            f"Mirrors          : {len([l for l in self.state.mirrorlist.splitlines() if l.strip().startswith('Server')])} servers\n"
-            "(Next stages not yet implemented.)"
-        )
+        dlg.format_secondary_text("No further stages defined.")
         dlg.run()
         dlg.destroy()
 

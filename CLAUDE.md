@@ -49,14 +49,14 @@ No Calamares. No archinstall. Completely original.
  5  Partition Scheme
  6  Filesystem + Encryption
  7  Mirror Selection
- 8  Package Selection          ← DE/WM + extras chosen here
+ 8  Package Selection          ← DE/WM multi-select + extras chosen here
  9  Timezone
 10  System Config / Hostname
-11  User Setup                 ← shell adds zsh/fish to extra_packages
-12  Base Install               ← pacstrap runs with complete package list
-13  Bootloader                 ✅ complete
-14  Review & Confirm           (planned)
-15  Complete / Reboot          (planned)
+11  User Setup
+12  Review & Confirm           ← confirm everything BEFORE install
+13  Base Install               ← pacstrap runs here
+14  Bootloader                 ← post-install config
+15  Complete / Reboot          ← locale, initramfs, services, reboot
 ```
 
 ## Status
@@ -75,10 +75,10 @@ No Calamares. No archinstall. Completely original.
 |  9 | Timezone               | ✅ Complete | ui/timezone.py                           |
 | 10 | System Config          | ✅ Complete | ui/system_config.py                      |
 | 11 | User Setup             | ✅ Complete | ui/users.py                              |
-| 12 | Base Install           | ✅ Complete | ui/install.py, backend/pacstrap.py       |
-| 13 | Bootloader             | ✅ Complete | ui/bootloader.py                         |
-| 14 | Review & Confirm       | 🔲 Planned  |                                          |
-| 15 | Complete / Reboot      | 🔲 Planned  |                                          |
+| 12 | Review & Confirm       | ✅ Complete | ui/review.py                             |
+| 13 | Base Install           | ✅ Complete | ui/install.py, backend/pacstrap.py       |
+| 14 | Bootloader             | ✅ Complete | ui/bootloader.py                         |
+| 15 | Complete / Reboot      | ✅ Complete | ui/complete.py                           |
 
 ---
 
@@ -105,8 +105,10 @@ arch-installer/
 │   │   ├── timezone.py         ← stage 9
 │   │   ├── system_config.py    ← stage 10
 │   │   ├── users.py            ← stage 11
-│   │   ├── install.py          ← stage 12
-│   │   └── bootloader.py       ← stage 13
+│   │   ├── review.py           ← stage 12
+│   │   ├── install.py          ← stage 13
+│   │   ├── bootloader.py       ← stage 14
+│   │   └── complete.py         ← stage 15
 │   ├── backend/
 │   │   ├── runner.py           ← dry-run safe subprocess wrapper
 │   │   ├── network.py
@@ -142,10 +144,10 @@ Key fields:
 - `btrfs_subvolumes`    — bool
 - `luks_passphrase`     — empty = no encryption
 - `mirrorlist`          — final mirrorlist content string
-- `desktop_environment` — 'gnome'|'kde'|'xfce'|'sway'|'hyprland'|'niri'|'i3'|'bspwm'|''
-- `display_manager`     — 'gdm'|'sddm'|'lightdm'|''
+- `desktop_environment` — comma-separated selected DE ids, e.g. 'gnome,i3' or ''
+- `display_manager`     — dm of first full DE selected, or ''
 - `base_packages`       — ['base','base-devel','linux','linux-firmware']
-- `extra_packages`      — selected extras + DE pkgs + shell if non-bash
+- `extra_packages`      — selected extras + all DE pkgs + shell if non-bash
 - `hostname`            — e.g. 'my-arch-pc'
 - `root_password`       — string
 - `enable_ntp`          — bool, default True
@@ -185,6 +187,13 @@ Set instance variables BEFORE calling `super().__init__()`.
 - Guard any call made during `build_content()`:
   `if hasattr(self, 'next_btn'): self.set_next_enabled(...)`
 
+**CRITICAL — optional widgets:**
+- Any widget built conditionally (e.g. only in Advanced mode) must be guarded
+  before access: `if hasattr(self, '_my_widget'): ...`
+- Example: `_hosts_preview` in system_config.py is built inside
+  `_build_advanced_card()` — `_update_hosts_preview()` guards with
+  `if not hasattr(self, '_hosts_preview'): return`
+
 **Wiki links:**
 - Define `WIKI_LINKS = [("Label", "https://..."), ...]` as a class variable.
 - BaseScreen renders them automatically in a `Gtk.Expander` ("📖 Arch Wiki")
@@ -193,6 +202,47 @@ Set instance variables BEFORE calling `super().__init__()`.
 - `_open_wiki(url)` is provided by BaseScreen; override only if you need to
   pass extra context (e.g. NetworkScreen passes `connected=self._connected`).
   Override signature must be `_open_wiki(self, url: str)` — one argument.
+
+---
+
+## Review Screen (Stage 12)
+
+- File: `installer/ui/review.py`
+- Read-only summary of all state — nothing is saved here
+- Five categorised cards: System, Disk & Partitions, Packages, Users,
+  and an "After Confirmation" info card showing the remaining stages
+- Each card has an ✏ Edit button that jumps directly back to that stage
+- A confirmation checkbox must be ticked before Next is enabled
+- Next button label: "🧪 Begin Dry Run" or "🚀 Begin Installation"
+- Validates: target disk set, partitions defined, root password set, users defined
+
+**Edit button jump-back flow (main.py):**
+- `ReviewScreen.__init__` accepts `on_jump` callback
+- `on_jump(stage_index)` calls `InstallerWindow._jump_to_stage()`
+- `_jump_to_stage()` sets `_return_to_review = True`, clears the target stage
+  card, and slides back to it
+- `_advance()` checks `_return_to_review` — if set and current stage < Review,
+  clears the flag, destroys the stale Review card, and jumps straight back to
+  Review instead of stepping forward one at a time
+
+---
+
+## Complete Screen (Stage 15)
+
+- File: `installer/ui/complete.py`
+- Three-phase screen: ready → running → done (same pattern as install.py)
+- 7 post-install steps run in a background thread:
+  1. locale — locale-gen + locale.conf
+  2. vconsole — vconsole.conf (keyboard layout)
+  3. timezone — /etc/localtime symlink + hwclock --systohc
+  4. initramfs — injects encrypt hook if LUKS+UKI, then mkinitcpio -P
+  5. bootloader — GRUB / systemd-boot / rEFInd / EFIStub / UKI install
+  6. services — systemctl enable for NetworkManager, timesyncd, display manager
+  7. unmount — umount -R /mnt
+- Done page: dry run → "Close" button; real install → "🔁 Reboot Now" button
+  (calls `systemctl reboot` or falls back to `subprocess.run(["reboot"])`)
+- Back button disabled — no going back once post-install config starts
+- Retry button appears on step failure (resumes from failed step)
 
 ---
 
@@ -241,7 +291,7 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 
 ---
 
-## Bootloader Options (Stage 13)
+## Bootloader Options (Stage 14)
 
 | Bootloader   | Beginner | Intermediate | Advanced |
 |--------------|----------|--------------|----------|
@@ -261,7 +311,7 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
-- [ ] UKI: mkinitcpio vs dracut — backend not yet wired (Stage 13 UI complete)
+- [ ] UKI: mkinitcpio vs dracut — backend not yet wired (Stage 14 UI complete)
 - [ ] Secure Boot key enrollment — deferred post-bootloader
 - [ ] pkexec privilege escalation not yet wired up
 
@@ -269,45 +319,34 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 
 ## Session Commit Log
 
-| Session | Commit message                                                          |
-|---------|-------------------------------------------------------------------------|
-| 1       | chore: initial project scaffold                                         |
-| 2       | feat(stage-0): welcome, experience level                                |
-| 2       | chore: restructure into installer/ package                              |
-| 3       | feat(stage-1): network setup, wiki viewer                               |
-| 4       | feat(stages-2-4): keyboard, locale, disk selection                      |
-| 4       | docs: update CLAUDE.md and README.md                                    |
-| 5       | feat(stages-5-6): partitions, filesystem + LUKS                         |
-| 5       | docs: update CLAUDE.md and README.md                                    |
-| 6       | feat(stage-7): mirror selection with reflector                          |
-| 6       | fix(mirrors): checkbox pre-selection, visibility timing                  |
-| 6       | docs: update CLAUDE.md and README.md                                    |
-| 7       | feat(stage-8): package selection, DE/WM picker                          |
-| 7       | feat(stages-9-12): base install, dry-run, runner.py                     |
-| 7       | fix(style): disk-card CSS, treeview selection, dry-run banner           |
-| 7       | docs: update CLAUDE.md and README.md                                    |
-| 8       | feat(stage-10): timezone with live clock                                |
-| 8       | feat(stage-11): system config — hostname, root password, NTP            |
-| 8       | fix: password strength colors, NTP checkbox visibility                  |
-| 8       | docs: update CLAUDE.md and README.md                                    |
-| 9       | refactor: reorder stages — all choices before pacstrap                  |
-| 9       | feat(stage-11): user setup — username, password, sudo, shell, groups    |
-| 9       | fix(filesystem): visibility timing bug on beginner level                |
-| 9       | fix(install): hostname + users in summary and install log               |
-| 9       | docs: update CLAUDE.md and README.md                                    |
-| 10      | feat(stage-13): bootloader selection screen                             |
-| 10      | fix(ui): wiki links collapsible expander in hints panel                 |
-| 10      | fix(network): move wiki links to panel, remove inline widget            |
-| 10      | docs: update CLAUDE.md and README.md                                    |
-
----
-
-## Next Session: Stage 14 — Review & Confirm
-
-- File: `installer/ui/review.py`
-- Show a complete human-readable summary of every selection made
-- Use `state.summary()` as a starting point but render it properly in the UI
-- Group by category: Disk, System, Packages, Users, Bootloader
-- A final "Begin Installation" / "Begin Dry Run" confirm button
-- Consider a "Go back to stage X" quick-jump for each section
-- Upload `main.py` and `state.py` at start of next session
+| Session | Commit message                                                               |
+|---------|------------------------------------------------------------------------------|
+| 1       | chore: initial project scaffold                                              |
+| 2       | feat(stage-0): welcome, experience level                                     |
+| 2       | chore: restructure into installer/ package                                   |
+| 3       | feat(stage-1): network setup, wiki viewer                                    |
+| 4       | feat(stages-2-4): keyboard, locale, disk selection                           |
+| 4       | docs: update CLAUDE.md and README.md                                         |
+| 5       | feat(stages-5-6): partitions, filesystem + LUKS                              |
+| 5       | docs: update CLAUDE.md and README.md                                         |
+| 6       | feat(stage-7): mirror selection with reflector                               |
+| 6       | fix(mirrors): checkbox pre-selection, visibility timing                       |
+| 6       | docs: update CLAUDE.md and README.md                                         |
+| 7       | feat(stage-8): package selection, DE/WM picker                               |
+| 7       | feat(stages-9-12): base install, dry-run, runner.py                          |
+| 7       | fix(style): disk-card CSS, treeview selection, dry-run banner                |
+| 7       | docs: update CLAUDE.md and README.md                                         |
+| 8       | feat(stage-10): timezone with live clock                                     |
+| 8       | feat(stage-11): system config — hostname, root password, NTP                 |
+| 8       | fix: password strength colors, NTP checkbox visibility                       |
+| 8       | docs: update CLAUDE.md and README.md                                         |
+| 9       | refactor: reorder stages — all choices before pacstrap                       |
+| 9       | feat(stage-11): user setup — username, password, sudo, shell, groups         |
+| 9       | fix(filesystem): visibility timing bug on beginner level                     |
+| 9       | fix(install): hostname + users in summary and install log                    |
+| 9       | docs: update CLAUDE.md and README.md                                         |
+| 10      | feat(stage-13): bootloader selection screen                                  |
+| 10      | fix(ui): wiki links collapsible expander in hints panel                      |
+| 10      | fix(network): move wiki links to panel, remove inline widget                 |
+| 10      | docs: update CLAUDE.md and README.md                                         |
+| 11      | feat(stages-12-15): review, complete/reboot; fix stage order; multi-select DE|

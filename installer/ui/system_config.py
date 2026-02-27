@@ -238,6 +238,11 @@ class SystemConfigScreen(BaseScreen):
         self._pw_error.set_xalign(0)
         box.pack_start(self._pw_error, False, False, 0)
 
+        # Pre-fill if coming back with a password already set
+        if self.state.root_password:
+            self._pw_entry.set_text(self.state.root_password)
+            self._confirm_entry.set_text(self.state.root_password)
+
         frame.add(box)
         return frame
 
@@ -350,6 +355,8 @@ class SystemConfigScreen(BaseScreen):
         return frame
 
     def _update_hosts_preview(self):
+        if not hasattr(self, "_hosts_preview"):
+            return
         hostname = self._hostname_entry.get_text().strip() if hasattr(self, "_hostname_entry") else "archlinux"
         if not hostname:
             hostname = "archlinux"

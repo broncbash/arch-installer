@@ -31,14 +31,19 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
   accessible via a collapsible "📖 Arch Wiki" expander in the hints panel
 - **Full partitioning** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvolumes
 - **Mirror selection** — reflector with checkbox country picker and live log
-- **Package selection** — 9 DE/WM options plus curated extras and free-form entry
+- **Package selection** — 9 DE/WM options with multi-select (tick as many as you
+  want), curated extras checklist, and free-form package entry
 - **Timezone** — searchable list with live clock preview, auto-detected default
 - **System config** — hostname validation, root password with strength indicator, NTP
 - **User setup** — username, password, sudo, shell picker, group checkboxes
+- **Review & Confirm** — full summary of every selection before anything touches
+  disk; ✏ Edit buttons jump directly back to any stage and return automatically
 - **Base system install** — pacstrap with live log, per-step progress, retry on error
 - **Bootloader selection** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; options
   filtered by experience level with live card switching
-- **Dry-run mode** — red banner + full simulation so you can test safely anywhere
+- **Complete / Reboot** — post-install chroot config: locale, keyboard, timezone,
+  initramfs, bootloader install, service enablement, unmount, reboot
+- **Dry-run mode** — yellow banner + full simulation so you can test safely anywhere
 
 ---
 
@@ -58,10 +63,12 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 |  9 | Timezone | ✅ Complete |
 | 10 | System Config / Hostname | ✅ Complete |
 | 11 | User Setup | ✅ Complete |
-| 12 | Base Install (pacstrap) | ✅ Complete |
-| 13 | Bootloader | ✅ Complete |
-| 14 | Review & Confirm | 🔲 Planned |
-| 15 | Complete / Reboot | 🔲 Planned |
+| 12 | Review & Confirm | ✅ Complete |
+| 13 | Base Install (pacstrap) | ✅ Complete |
+| 14 | Bootloader | ✅ Complete |
+| 15 | Complete / Reboot | ✅ Complete |
+
+All 16 stages complete. 🎉
 
 ---
 
@@ -82,7 +89,7 @@ cd arch-installer
 python3 -m installer.main
 ```
 
-The installer starts in **dry-run mode** by default — a red banner is shown and
+The installer starts in **dry-run mode** by default — a yellow banner is shown and
 no disk operations are performed. To perform a real install, set
 `dry_run = False` in `installer/state.py`.
 
@@ -90,9 +97,10 @@ no disk operations are performed. To perform a real install, set
 
 ## Safety: Dry-Run Mode
 
-- A **red warning banner** is shown at the top of every screen
+- A **yellow warning banner** is shown at the top of every screen
 - All disk operations are **logged but never executed**
 - The install screen shows "🧪 Begin Dry Run" instead of "Begin Installation"
+- The complete screen shows "🧪 Begin Dry Run" and closes instead of rebooting
 - The full UI flow works identically — progress bars, logs, step indicators
 
 To perform a real install:
@@ -106,9 +114,9 @@ dry_run: bool = False
 ## Design Notes
 
 **All choices come before the install.** Packages, timezone, hostname, users —
-everything is configured first. Pacstrap runs last with the complete picture.
-This means the shell you pick for your user (zsh, fish) is automatically
-included in the pacstrap package list.
+everything is configured first on the Review & Confirm screen. Pacstrap runs
+after confirmation with the complete picture. This means the shell you pick
+for your user (zsh, fish) is automatically included in the pacstrap package list.
 
 **Experience levels** control what's visible on every screen:
 - Beginner sees only the safest options with plain-language explanations
@@ -118,6 +126,11 @@ included in the pacstrap package list.
 **Arch Wiki links** are available on every screen via a collapsible expander
 at the bottom of the hints panel. Collapsed by default so the hint text always
 has room to breathe — one click to expand when you need a reference.
+
+**Review & Confirm** is a read-only summary of every selection made across all
+prior stages. Each section has an ✏ Edit button that jumps directly back to that
+stage. After editing, clicking Next on the edited screen returns automatically to
+Review — no need to step through intermediate screens.
 
 ---
 
