@@ -14,12 +14,15 @@ Handles the full install sequence:
 
 All operations go through runner.run_cmd() so dry_run mode is
 respected automatically — nothing touches the disk in dry_run mode.
+
+The pacstrap step uses run_cmd_streaming() so live output is fed
+to the UI ticker callback as packages download and install.
 """
 
 import logging
 import os
 
-from installer.backend.runner import run_cmd, run_chroot, run_script
+from installer.backend.runner import run_cmd, run_chroot, run_script, run_cmd_streaming
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ MOUNTPOINT = "/mnt"
 
 
 # ── Step definitions ──────────────────────────────────────────────────────────
-# Each step has an id, label, and the function that executes it.
+# Each step has an id and label.
 # The install screen iterates these in order, updating the UI between each.
 
 INSTALL_STEPS = [
@@ -43,9 +46,15 @@ INSTALL_STEPS = [
 ]
 
 
-def run_step(step_id: str, state) -> tuple:
+def run_step(step_id: str, state, ticker_cb=None) -> tuple:
     """
     Execute a single install step.
+
+    Args:
+        step_id:   One of the step ids from INSTALL_STEPS
+        state:     InstallState
+        ticker_cb: Optional callable(str) passed to streaming steps
+                   to update the UI live status ticker
 
     Returns:
         (success: bool, output: str)
@@ -70,6 +79,9 @@ def run_step(step_id: str, state) -> tuple:
         return True, "No encryption requested — skipping."
 
     try:
+        # Pass ticker_cb to steps that support it (pacstrap)
+        if step_id == "pacstrap":
+            return fn(state, ticker_cb=ticker_cb)
         return fn(state)
     except Exception as exc:
         msg = f"Unexpected error in step '{step_id}': {exc}"
@@ -141,7 +153,7 @@ def _step_partition(state) -> tuple:
             if p.size_mb > 0:
                 start_mb += p.size_mb
 
-    # Update partition device paths in state (e.g. /dev/sda → /dev/sda1, sda2…)
+    # Update partition device paths in state
     _assign_partition_devices(state)
 
     return True, "\n".join(logs)
@@ -239,30 +251,15 @@ def _step_luks(state) -> tuple:
         if not p.encrypt:
             continue
 
-        # Format the partition with LUKS
+        safe_pass = state.luks_passphrase.replace("'", "'\\''")
         ok, out = run_cmd(
-            ["cryptsetup", "luksFormat",
-             "--type", "luks2",
-             "--batch-mode",
-             p.device],
-            state, f"LUKS format {p.device}",
-            # In live mode this needs the passphrase piped in —
-            # handled via echo | cryptsetup below
+            ["bash", "-c",
+             f"echo -n '{safe_pass}' | cryptsetup luksFormat "
+             f"--type luks2 --batch-mode {p.device}"],
+            state, f"LUKS format {p.device}"
         )
-        # For real installs we pipe the passphrase:
-        # echo -n "$PASS" | cryptsetup luksFormat --batch-mode ...
-        # Use run_script for that. In dry_run it doesn't matter.
         if not ok:
-            # Try with passphrase piped
-            safe_pass = state.luks_passphrase.replace("'", "'\\''")
-            ok, out = run_cmd(
-                ["bash", "-c",
-                 f"echo -n '{safe_pass}' | cryptsetup luksFormat "
-                 f"--type luks2 --batch-mode {p.device}"],
-                state, f"LUKS format {p.device} (with passphrase)"
-            )
-            if not ok:
-                return False, out
+            return False, out
         logs.append(out)
 
         # Open the LUKS container
@@ -307,7 +304,6 @@ def _step_mount(state) -> tuple:
     for p in sorted_parts:
         target = f"{MOUNTPOINT}{p.mountpoint}"
 
-        # Create mountpoint directory
         ok, out = run_cmd(
             ["mkdir", "-p", target],
             state, f"Create mountpoint {target}"
@@ -315,7 +311,6 @@ def _step_mount(state) -> tuple:
         if not ok:
             return False, out
 
-        # Handle btrfs subvolumes
         if p.filesystem == "btrfs" and p.mountpoint == "/" and state.btrfs_subvolumes:
             ok, out = _mount_btrfs_subvolumes(p, state)
             if not ok:
@@ -337,9 +332,7 @@ def _step_mount(state) -> tuple:
 def _mount_btrfs_subvolumes(p, state) -> tuple:
     """Create and mount standard btrfs subvolumes: @, @home, @snapshots."""
     logs = []
-    tmp = "/mnt/btrfs_tmp"
 
-    # Mount flat first
     ok, out = run_cmd(
         ["mount", p.device, "/mnt"],
         state, "Mount btrfs root temporarily"
@@ -356,12 +349,10 @@ def _mount_btrfs_subvolumes(p, state) -> tuple:
             return False, out
         logs.append(out)
 
-    # Unmount flat
     ok, out = run_cmd(["umount", "/mnt"], state, "Unmount btrfs temp mount")
     if not ok:
         return False, out
 
-    # Remount with subvolumes
     mnt_opts = "noatime,compress=zstd,space_cache=v2,subvol=@"
     ok, out = run_cmd(
         ["mount", "-o", mnt_opts, p.device, "/mnt"],
@@ -393,13 +384,11 @@ def _step_mirrorlist(state) -> tuple:
         return False, "No mirrorlist available. Go back to the Mirror Selection stage."
 
     if state.dry_run:
-        from installer.backend.runner import run_cmd as _run
-        return _run(
+        return run_cmd(
             ["tee", f"{MOUNTPOINT}/etc/pacman.d/mirrorlist"],
             state, "Write mirrorlist"
         )
 
-    # Live: write the file directly
     try:
         os.makedirs(f"{MOUNTPOINT}/etc/pacman.d", exist_ok=True)
         with open(f"{MOUNTPOINT}/etc/pacman.d/mirrorlist", "w") as f:
@@ -410,41 +399,16 @@ def _step_mirrorlist(state) -> tuple:
         return False, f"Failed to write mirrorlist: {e}"
 
 
-def _step_pacstrap(state) -> tuple:
-    """Run pacstrap to install the base system."""
-    packages = list(state.base_packages)
+def _step_pacstrap(state, ticker_cb=None) -> tuple:
+    """Run pacstrap to install the base system with live streaming output."""
+    packages = build_package_list(state)
 
-    # Add NetworkManager always
-    if state.network_manager and state.network_manager not in packages:
-        packages.append(state.network_manager)
-
-    # Add DE/WM packages
-    packages.extend(state.extra_packages)
-
-    # Add filesystem tools
-    if state.root_filesystem == "btrfs":
-        packages.append("btrfs-progs")
-    elif state.root_filesystem == "xfs":
-        packages.append("xfsprogs")
-    elif state.root_filesystem == "f2fs":
-        packages.append("f2fs-tools")
-
-    # Add LUKS tools if encryption enabled
-    if state.luks_passphrase:
-        packages.append("cryptsetup")
-
-    # Deduplicate while preserving order
-    seen = set()
-    unique_packages = []
-    for p in packages:
-        if p not in seen:
-            seen.add(p)
-            unique_packages.append(p)
-
-    return run_cmd(
-        ["pacstrap", "-K", MOUNTPOINT] + unique_packages,
-        state, f"pacstrap {len(unique_packages)} packages",
-        timeout=1800,  # 30 min timeout — large installs take time
+    return run_cmd_streaming(
+        ["pacstrap", "-K", MOUNTPOINT] + packages,
+        state,
+        description=f"pacstrap {len(packages)} packages",
+        ticker_cb=ticker_cb,
+        timeout=1800,  # 30 min — large installs take time
     )
 
 
@@ -463,14 +427,11 @@ def _step_fstab(state) -> tuple:
     return ok, out
 
 
-
-
 def _step_hostname(state) -> tuple:
     """Write /etc/hostname and /etc/hosts inside the chroot."""
     logs = []
     hostname = state.hostname or "archlinux"
 
-    # /etc/hostname
     if state.dry_run:
         ok, out = run_cmd(
             ["bash", "-c", f"echo '{hostname}' > {MOUNTPOINT}/etc/hostname"],
@@ -488,7 +449,6 @@ def _step_hostname(state) -> tuple:
         return False, out
     logs.append(out)
 
-    # /etc/hosts
     hosts_content = (
         "127.0.0.1   localhost\n"
         "::1         localhost\n"
@@ -518,7 +478,6 @@ def _step_users(state) -> tuple:
     """Set root password and create user accounts inside the chroot."""
     logs = []
 
-    # Set root password
     if state.root_password:
         safe = state.root_password.replace("'", "'\\''")
         ok, out = run_cmd(
@@ -530,14 +489,12 @@ def _step_users(state) -> tuple:
             return False, out
         logs.append(out)
 
-    # Create each user
     for user in state.users:
         uname = user["username"]
         pw    = user["password"]
         shell = user.get("shell", "/bin/bash")
         sudo  = user.get("sudo", True)
 
-        # Build group list: wheel if sudo, plus any extra groups
         group_list = []
         if sudo:
             group_list.append("wheel")
@@ -549,13 +506,14 @@ def _step_users(state) -> tuple:
 
         ok, out = run_chroot(
             ["useradd", "-m", "-G", groups_str, "-s", shell, uname],
-            state, f"Create user: {uname} (groups: {groups_str})"
+            state,
+            mountpoint=MOUNTPOINT,
+            description=f"Create user: {uname} (groups: {groups_str})"
         )
         if not ok:
             return False, out
         logs.append(out)
 
-        # Set user password
         safe_pw = pw.replace("'", "'\\''")
         ok, out = run_cmd(
             ["bash", "-c",
@@ -566,13 +524,14 @@ def _step_users(state) -> tuple:
             return False, out
         logs.append(out)
 
-        # Enable sudo via wheel group (uncomment %wheel line in sudoers)
         if sudo:
             ok, out = run_chroot(
                 ["sed", "-i",
                  "s/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/",
                  "/etc/sudoers"],
-                state, "Enable wheel group in sudoers"
+                state,
+                mountpoint=MOUNTPOINT,
+                description="Enable wheel group in sudoers"
             )
             if not ok:
                 return False, out
@@ -582,20 +541,27 @@ def _step_users(state) -> tuple:
 
     return True, "\n".join(logs)
 
+
 def build_package_list(state) -> list:
-    """Return the full list of packages that will be installed. Used for display."""
+    """Return the full deduplicated list of packages that will be installed."""
     packages = list(state.base_packages)
+
+    # networkmanager — all lowercase, this is the correct Arch package name
     if state.network_manager and state.network_manager not in packages:
         packages.append(state.network_manager)
+
     packages.extend(state.extra_packages)
+
     if state.root_filesystem == "btrfs":
         packages.append("btrfs-progs")
     elif state.root_filesystem == "xfs":
         packages.append("xfsprogs")
     elif state.root_filesystem == "f2fs":
         packages.append("f2fs-tools")
+
     if state.luks_passphrase:
         packages.append("cryptsetup")
+
     seen = set()
     result = []
     for p in packages:
