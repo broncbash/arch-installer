@@ -2,29 +2,24 @@
 installer/ui/install.py
 ------------------------
 Stage 9 — Base System Install
-
 Two-phase screen:
-
   Phase 1 — Pre-install summary
     Shows a full checklist of what is about to happen.
-    User must click "Begin Installation" to proceed.
+    Begin Installation button is fixed at the bottom, outside the scroll area.
     Back button is available in this phase.
-
   Phase 2 — Live install
     Steps execute one by one in a background thread.
     Progress bar advances per step.
+    Live status ticker shows current package/file being processed.
     Log output scrolls in real time.
     Back button is disabled during install.
     On success: Next button enabled.
     On failure: error shown, Retry and Abort buttons offered.
 """
-
 import threading
-
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, Pango
-
 from installer.ui.base_screen import BaseScreen
 from installer.backend.pacstrap import (
     INSTALL_STEPS,
@@ -35,10 +30,8 @@ from installer.backend.pacstrap import (
 
 class InstallScreen(BaseScreen):
     """Stage 9 — Base System Install."""
-
     title    = "Base System Install"
     subtitle = "Partition, format, and install the Arch Linux base system"
-
     WIKI_LINKS = [
         ("Installation guide", "https://wiki.archlinux.org/title/Installation_guide"),
         ("pacstrap",           "https://wiki.archlinux.org/title/Pacstrap"),
@@ -46,17 +39,14 @@ class InstallScreen(BaseScreen):
     ]
 
     def __init__(self, state, on_next, on_back):
-        self._phase          = "summary"   # 'summary' | 'installing' | 'done' | 'error'
+        self._phase          = "summary"
         self._current_step   = 0
         self._failed_step    = None
         self._install_thread = None
-
+        self._ticker_source  = None
         super().__init__(state=state, on_next=on_next, on_back=on_back)
-
         self.set_next_enabled(False)
         GLib.idle_add(self._apply_phase)
-
-    # ── Hints ─────────────────────────────────────────────────────────────────
 
     def get_hints(self) -> dict:
         dry = "  [DRY RUN — nothing will actually be written]" if self.state.dry_run else ""
@@ -91,31 +81,42 @@ class InstallScreen(BaseScreen):
             ),
         }
 
-    # ── Content ───────────────────────────────────────────────────────────────
-
     def build_content(self) -> Gtk.Widget:
+        self._outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self._stack.set_transition_duration(180)
-
         self._stack.add_named(self._build_summary_page(), "summary")
         self._stack.add_named(self._build_install_page(), "install")
+        self._outer_box.pack_start(self._stack, True, True, 0)
 
-        return self._stack
+        self._begin_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self._begin_row.set_margin_top(10)
+        self._begin_row.set_margin_bottom(4)
+        self._begin_row.set_margin_start(4)
+        self._begin_row.set_margin_end(4)
 
-    # ── Summary page ──────────────────────────────────────────────────────────
+        self._begin_btn = Gtk.Button(
+            label="🧪  Begin Dry Run" if self.state.dry_run else "⚠  Begin Installation"
+        )
+        self._begin_btn.get_style_context().add_class("action-button")
+        self._begin_btn.set_hexpand(True)
+        self._begin_btn.connect("clicked", self._on_begin_clicked)
+        self._begin_row.pack_start(self._begin_btn, True, True, 0)
+        self._outer_box.pack_start(self._begin_row, False, False, 0)
+
+        return self._outer_box
 
     def _build_summary_page(self) -> Gtk.Widget:
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         box.set_margin_start(4)
         box.set_margin_end(4)
         box.set_margin_top(4)
         box.set_margin_bottom(4)
 
-        # ── What will happen ──────────────────────────────────────────────────
         steps_frame = Gtk.Frame()
         steps_frame.get_style_context().add_class("card")
         steps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -123,12 +124,10 @@ class InstallScreen(BaseScreen):
         steps_box.set_margin_end(14)
         steps_box.set_margin_top(10)
         steps_box.set_margin_bottom(10)
-
         steps_heading = Gtk.Label(label="What will happen:")
         steps_heading.get_style_context().add_class("section-heading")
         steps_heading.set_xalign(0)
         steps_box.pack_start(steps_heading, False, False, 0)
-
         for step_id, step_label in INSTALL_STEPS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             icon = Gtk.Label(label="◦")
@@ -139,11 +138,9 @@ class InstallScreen(BaseScreen):
             lbl.set_xalign(0)
             row.pack_start(lbl, True, True, 0)
             steps_box.pack_start(row, False, False, 0)
-
         steps_frame.add(steps_box)
         box.pack_start(steps_frame, False, False, 0)
 
-        # ── Configuration summary ─────────────────────────────────────────────
         cfg_frame = Gtk.Frame()
         cfg_frame.get_style_context().add_class("card")
         cfg_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -151,12 +148,10 @@ class InstallScreen(BaseScreen):
         cfg_box.set_margin_end(14)
         cfg_box.set_margin_top(10)
         cfg_box.set_margin_bottom(10)
-
         cfg_heading = Gtk.Label(label="Your configuration:")
         cfg_heading.get_style_context().add_class("section-heading")
         cfg_heading.set_xalign(0)
         cfg_box.pack_start(cfg_heading, False, False, 0)
-
         s = self.state
         user_summary = ", ".join(
             f"{u['username']} ({'sudo' if u['sudo'] else 'no sudo'})"
@@ -185,11 +180,9 @@ class InstallScreen(BaseScreen):
             row.pack_start(k, False, False, 0)
             row.pack_start(v, True, True, 0)
             cfg_box.pack_start(row, False, False, 0)
-
         cfg_frame.add(cfg_box)
         box.pack_start(cfg_frame, False, False, 0)
 
-        # ── Package list ──────────────────────────────────────────────────────
         pkg_frame = Gtk.Frame()
         pkg_frame.get_style_context().add_class("card")
         pkg_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -197,23 +190,19 @@ class InstallScreen(BaseScreen):
         pkg_box.set_margin_end(14)
         pkg_box.set_margin_top(10)
         pkg_box.set_margin_bottom(10)
-
         pkgs = build_package_list(self.state)
         pkg_heading = Gtk.Label(label=f"Packages to install  ({len(pkgs)} total):")
         pkg_heading.get_style_context().add_class("section-heading")
         pkg_heading.set_xalign(0)
         pkg_box.pack_start(pkg_heading, False, False, 0)
-
         pkg_label = Gtk.Label(label="  ".join(pkgs))
         pkg_label.get_style_context().add_class("detail-value")
         pkg_label.set_xalign(0)
         pkg_label.set_line_wrap(True)
         pkg_box.pack_start(pkg_label, False, False, 0)
-
         pkg_frame.add(pkg_box)
         box.pack_start(pkg_frame, False, False, 0)
 
-        # ── Dry-run notice ────────────────────────────────────────────────────
         if self.state.dry_run:
             notice = Gtk.Frame()
             notice.get_style_context().add_class("card")
@@ -235,20 +224,8 @@ class InstallScreen(BaseScreen):
             notice.add(notice_box)
             box.pack_start(notice, False, False, 0)
 
-        # ── Begin button ──────────────────────────────────────────────────────
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self._begin_btn = Gtk.Button(
-            label="🧪  Begin Dry Run" if self.state.dry_run else "⚠️  Begin Installation"
-        )
-        self._begin_btn.get_style_context().add_class("action-button")
-        self._begin_btn.connect("clicked", self._on_begin_clicked)
-        btn_row.pack_start(self._begin_btn, False, False, 0)
-        box.pack_start(btn_row, False, False, 0)
-
         scroll.add(box)
         return scroll
-
-    # ── Install page ──────────────────────────────────────────────────────────
 
     def _build_install_page(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -257,7 +234,6 @@ class InstallScreen(BaseScreen):
         box.set_margin_top(4)
         box.set_margin_bottom(4)
 
-        # ── Step indicators ───────────────────────────────────────────────────
         steps_frame = Gtk.Frame()
         steps_frame.get_style_context().add_class("card")
         self._steps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -265,10 +241,8 @@ class InstallScreen(BaseScreen):
         self._steps_box.set_margin_end(14)
         self._steps_box.set_margin_top(10)
         self._steps_box.set_margin_bottom(10)
-
         self._step_labels = {}
         self._step_icons  = {}
-
         for step_id, step_label in INSTALL_STEPS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             icon = Gtk.Label(label="○")
@@ -282,31 +256,43 @@ class InstallScreen(BaseScreen):
             self._step_labels[step_id] = lbl
             row.pack_start(lbl, True, True, 0)
             self._steps_box.pack_start(row, False, False, 0)
-
         steps_frame.add(self._steps_box)
         box.pack_start(steps_frame, False, False, 0)
 
-        # ── Progress bar ──────────────────────────────────────────────────────
         self._progress = Gtk.ProgressBar()
         self._progress.set_show_text(True)
         self._progress.set_text("Waiting…")
         self._progress.set_fraction(0.0)
         box.pack_start(self._progress, False, False, 0)
 
-        # ── Log output ────────────────────────────────────────────────────────
+        ticker_frame = Gtk.Frame()
+        ticker_frame.get_style_context().add_class("card")
+        ticker_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        ticker_inner.set_margin_start(10)
+        ticker_inner.set_margin_end(10)
+        ticker_inner.set_margin_top(6)
+        ticker_inner.set_margin_bottom(6)
+        self._ticker_spinner = Gtk.Spinner()
+        ticker_inner.pack_start(self._ticker_spinner, False, False, 0)
+        self._ticker_label = Gtk.Label(label="Waiting…")
+        self._ticker_label.get_style_context().add_class("detail-value")
+        self._ticker_label.set_xalign(0)
+        self._ticker_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        self._ticker_label.set_hexpand(True)
+        ticker_inner.pack_start(self._ticker_label, True, True, 0)
+        ticker_frame.add(ticker_inner)
+        box.pack_start(ticker_frame, False, False, 0)
+
         log_frame = Gtk.Frame()
         log_frame.get_style_context().add_class("card")
-
         log_inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         log_inner.set_margin_start(2)
         log_inner.set_margin_end(2)
         log_inner.set_margin_top(2)
         log_inner.set_margin_bottom(2)
-
         log_scroll = Gtk.ScrolledWindow()
         log_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        log_scroll.set_min_content_height(180)
-
+        log_scroll.set_min_content_height(160)
         self._log_view = Gtk.TextView()
         self._log_view.set_editable(False)
         self._log_view.set_cursor_visible(False)
@@ -314,57 +300,62 @@ class InstallScreen(BaseScreen):
         self._log_view.override_font(Pango.FontDescription("Monospace 9"))
         self._log_view.get_style_context().add_class("detail-value")
         self._log_buffer = self._log_view.get_buffer()
-
         log_scroll.add(self._log_view)
         log_inner.pack_start(log_scroll, True, True, 0)
         log_frame.add(log_inner)
         box.pack_start(log_frame, True, True, 0)
 
-        # ── Status / error row ────────────────────────────────────────────────
         self._status_label = Gtk.Label(label="")
         self._status_label.get_style_context().add_class("detail-value")
         self._status_label.set_xalign(0)
         self._status_label.set_line_wrap(True)
         box.pack_start(self._status_label, False, False, 0)
 
-        # ── Retry / Abort buttons (hidden until error) ────────────────────────
         self._error_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-
         self._retry_btn = Gtk.Button(label="🔄  Retry failed step")
         self._retry_btn.get_style_context().add_class("action-button")
         self._retry_btn.connect("clicked", self._on_retry_clicked)
         self._error_row.pack_start(self._retry_btn, False, False, 0)
-
         self._abort_btn = Gtk.Button(label="✕  Abort — go back")
         self._abort_btn.get_style_context().add_class("action-button")
         self._abort_btn.connect("clicked", self._on_abort_clicked)
         self._error_row.pack_start(self._abort_btn, False, False, 0)
-
         self._error_row.set_no_show_all(True)
         box.pack_start(self._error_row, False, False, 0)
 
         return box
 
-    # ── Phase management ──────────────────────────────────────────────────────
-
     def _apply_phase(self):
         if self._phase == "summary":
             self._stack.set_visible_child_name("summary")
+            self._begin_row.show()
             self.set_back_enabled(True)
             self.set_next_enabled(False)
         elif self._phase in ("installing", "done", "error"):
             self._stack.set_visible_child_name("install")
+            self._begin_row.hide()
             self.set_back_enabled(False)
             self.set_next_enabled(self._phase == "done")
         return False
 
-    # ── Install flow ──────────────────────────────────────────────────────────
+    def _start_ticker(self):
+        self._ticker_spinner.start()
+        self._ticker_label.set_text("Starting…")
+
+    def _stop_ticker(self, final_text=""):
+        self._ticker_spinner.stop()
+        if final_text:
+            self._ticker_label.set_text(final_text)
+
+    def _update_ticker(self, text: str):
+        self._ticker_label.set_text(text)
 
     def _on_begin_clicked(self, btn):
         self._phase = "installing"
         self._current_step = 0
         self._apply_phase()
         self._reset_step_icons()
+        self._start_ticker()
         self._append_log(
             "🧪 DRY RUN — no disk changes will be made\n\n"
             if self.state.dry_run
@@ -376,33 +367,29 @@ class InstallScreen(BaseScreen):
         self._install_thread.start()
 
     def _install_worker(self):
-        """Runs in a background thread — executes each step in sequence."""
         steps = INSTALL_STEPS
         total = len(steps)
-
         for i, (step_id, step_label) in enumerate(steps):
-            # Update UI: mark step as running
             GLib.idle_add(self._set_step_running, step_id, i, total, step_label)
-
-            ok, output = run_step(step_id, self.state)
-
+            ok, output = run_step(step_id, self.state, self._on_ticker_update)
             if output:
                 GLib.idle_add(self._append_log, output + "\n")
-
             if ok:
                 GLib.idle_add(self._set_step_done, step_id, i + 1, total)
             else:
                 GLib.idle_add(self._set_step_failed, step_id, output)
-                return  # stop on first failure
-
-        # All steps completed
+                return
         GLib.idle_add(self._on_install_complete)
+
+    def _on_ticker_update(self, text: str):
+        GLib.idle_add(self._update_ticker, text)
 
     def _set_step_running(self, step_id, idx, total, label):
         self._step_icons[step_id].set_text("⏳")
         self._progress.set_fraction(idx / total)
         self._progress.set_text(f"Step {idx + 1}/{total}: {label}")
         self._append_log(f"\n▶  {label}\n")
+        self._update_ticker(f"Running: {label}")
 
     def _set_step_done(self, step_id, done, total):
         self._step_icons[step_id].set_text("✅")
@@ -413,6 +400,7 @@ class InstallScreen(BaseScreen):
         self._phase = "error"
         self._failed_step = step_id
         self._progress.set_text("Installation failed")
+        self._stop_ticker("❌  Failed")
         self._status_label.set_text(
             f"❌  Step failed: {dict(INSTALL_STEPS).get(step_id, step_id)}\n"
             f"    {error_msg}"
@@ -429,6 +417,7 @@ class InstallScreen(BaseScreen):
             if self.state.dry_run
             else "✅  Installation complete"
         )
+        self._stop_ticker("✅  All steps complete")
         self._status_label.set_text(
             "Base system installed successfully. Click Next to continue."
         )
@@ -445,11 +434,9 @@ class InstallScreen(BaseScreen):
         self._phase = "installing"
         self.set_back_enabled(False)
         self.set_next_enabled(False)
-
+        self._start_ticker()
         failed = self._failed_step
         self._failed_step = None
-
-        # Find the index of the failed step and resume from there
         step_ids = [s[0] for s in INSTALL_STEPS]
         start_idx = step_ids.index(failed) if failed in step_ids else 0
         total = len(INSTALL_STEPS)
@@ -458,7 +445,7 @@ class InstallScreen(BaseScreen):
             for i in range(start_idx, total):
                 step_id, step_label = INSTALL_STEPS[i]
                 GLib.idle_add(self._set_step_running, step_id, i, total, step_label)
-                ok, output = run_step(step_id, self.state)
+                ok, output = run_step(step_id, self.state, self._on_ticker_update)
                 if output:
                     GLib.idle_add(self._append_log, output + "\n")
                 if ok:
@@ -471,18 +458,14 @@ class InstallScreen(BaseScreen):
         threading.Thread(target=_retry_worker, daemon=True).start()
 
     def _on_abort_clicked(self, btn):
-        """Go back to the summary page."""
+        self._stop_ticker()
         self._phase = "summary"
         self._reset_step_icons()
         self._apply_phase()
 
-    # ── Log helpers ───────────────────────────────────────────────────────────
-
     def _append_log(self, text: str):
-        """Append text to the log view and scroll to bottom."""
         end = self._log_buffer.get_end_iter()
         self._log_buffer.insert(end, text)
-        # Scroll to bottom
         adj = self._log_view.get_parent().get_vadjustment()
         adj.set_value(adj.get_upper())
 
@@ -491,12 +474,10 @@ class InstallScreen(BaseScreen):
             if step_id in self._step_icons:
                 self._step_icons[step_id].set_text("○")
 
-    # ── Validate and save ─────────────────────────────────────────────────────
-
     def validate(self):
         if self._phase != "done":
             return False, "Complete the installation before continuing."
         return True, ""
 
     def on_next(self):
-        pass  # install_complete already set in _on_install_complete
+        pass
