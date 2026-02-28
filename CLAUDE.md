@@ -34,6 +34,7 @@ No Calamares. No archinstall. Completely original.
 | Encryption  | cryptsetup (LUKS2)              |
 | Initramfs   | mkinitcpio (default) or dracut  |
 | Install     | pacstrap                        |
+| ISO build   | archiso (mkarchiso)             |
 | VCS         | Git / GitLab (private)          |
 | License     | GPLv3                           |
 
@@ -144,6 +145,28 @@ arch-installer/
 │       ├── installer.png
 │       ├── installer.svg
 │       └── style.css
+├── iso/                    ← archiso profile — builds the live ISO
+│   ├── build.sh                ← main build script (sudo ./iso/build.sh)
+│   ├── profiledef.sh           ← ISO metadata, bootmodes, compression
+│   ├── packages.x86_64         ← all packages baked into the ISO
+│   ├── pacman.conf
+│   ├── README.md
+│   ├── airootfs/
+│   │   ├── etc/
+│   │   │   ├── customize_airootfs.sh   ← runs in chroot at build time
+│   │   │   ├── X11/xorg.conf.d/10-arch-installer.conf
+│   │   │   └── systemd/system/arch-installer.service
+│   │   ├── usr/local/bin/
+│   │   │   ├── arch-installer-session  ← starts X + installer
+│   │   │   └── start-installer         ← thin shim
+│   │   └── opt/arch-installer/         ← installer repo (copied in by build.sh)
+│   ├── efiboot/loader/
+│   │   ├── loader.conf
+│   │   └── entries/
+│   │       ├── arch-installer.conf
+│   │       └── arch-installer-debug.conf
+│   └── syslinux/
+│       └── syslinux.cfg
 └── tests/
 ```
 
@@ -351,8 +374,7 @@ Key classes: `.card`, `.level-card`, `.level-card.selected`, `.disk-card`,
 ## arch-installer Launcher Script
 
 The launcher script auto-installs GTK dependencies and expands cowspace before
-launching. However, the correct long-term solution is a custom ISO (see Next Phase
-below) so this is only needed as a fallback.
+launching. It is a fallback for running on the stock Arch ISO without a custom build.
 
 Key things the launcher does:
 - Checks for root, exits cleanly if not
@@ -364,47 +386,141 @@ Key things the launcher does:
 
 ---
 
+## Custom ISO — archiso Profile
+
+**Status:** ✅ Profile complete. Boot-tested in VM — installer launches automatically.
+
+**Location:** `iso/` directory in repo root.
+
+**Goal:** A custom Arch ISO that boots directly into the GTK installer with all
+dependencies pre-installed. No manual pacman installs, no cowspace hacks, no
+Python version mismatches. Boot → installer starts automatically.
+
+### Autostart mechanism (implemented: Option A)
+```
+systemd multi-user.target
+    └── arch-installer.service       (iso/airootfs/etc/systemd/system/)
+            └── arch-installer-session   (iso/airootfs/usr/local/bin/)
+                    ├── cleans up stale X locks
+                    ├── sets GTK_THEME=Adwaita:dark
+                    ├── starts Xorg :0 on tty1
+                    ├── waits up to 20s for /tmp/.X11-unix/X0 socket
+                    ├── sets background + mouse cursor via xsetroot
+                    └── python3 -m installer.main  (from /opt/arch-installer/)
+```
+On clean exit (reboot triggered by installer): service exits normally.
+On crash: systemd restarts after 3 seconds.
+getty@tty1.service is masked via /dev/null symlink in airootfs.
+
+### Critical archiso lessons learned (session 15)
+- `customize_airootfs.sh` is DEPRECATED in current archiso — not called automatically
+- Service enablement must use symlinks directly in `airootfs/etc/systemd/system/multi-user.target.wants/`
+- Masking services must use `/dev/null` symlinks in `airootfs/etc/systemd/system/`
+- `systemd-firstboot` is suppressed by placing `locale.conf`, `hostname`, `vconsole.conf`,
+  and `localtime` symlink directly in `airootfs/etc/` — firstboot skips if these exist
+- `mkinitcpio.conf.d/archiso.conf` is REQUIRED — without it initramfs has no archiso hooks
+  and boot fails with "Failed to start Switch Root"
+- `xdpyinfo` not needed — use `[[ -e /tmp/.X11-unix/X0 ]]` to detect Xorg readiness
+- `GTK_THEME=Adwaita:dark` must be exported or text colors are invisible (white on white)
+- `xorg-xsetroot` must be in packages for cursor and background color
+- efiboot entries must use `%INSTALL_DIR%` and `%ARCH%` variables, not hardcoded paths
+- `archisosearchuuid` not `archisodevice=UUID=` in boot entry options
+- Work directory MUST be on local filesystem — NFS/bind mount causes `realpath` errors
+- `networkmanager` package name is all lowercase — `NetworkManager` causes pacstrap failure
+
+### Build instructions
+```bash
+# One-time: install archiso on your Arch build machine
+sudo pacman -S archiso
+
+# Build — work dir must be local, output can be on NAS
+sudo mkarchiso -v \
+  -w /tmp/archiso-work \
+  -o /home/ronb/nas_data/Git_Projects/arch-installer/iso/out \
+  /home/ronb/nas_data/Git_Projects/arch-installer/iso
+
+# Clean rebuild
+sudo rm -rf /tmp/archiso-work
+sudo mkarchiso -v \
+  -w /tmp/archiso-work \
+  -o /home/ronb/nas_data/Git_Projects/arch-installer/iso/out \
+  /home/ronb/nas_data/Git_Projects/arch-installer/iso
+```
+
+Output ISO: `iso/out/arch-installer-YYYY.MM-x86_64.iso`
+
+### Required airootfs static files (prevent systemd-firstboot)
+These files must exist in `iso/airootfs/etc/` before building:
+- `locale.conf` → `LANG=en_US.UTF-8`
+- `hostname` → `arch-installer`
+- `vconsole.conf` → `KEYMAP=us`
+- `localtime` → symlink to `/usr/share/zoneinfo/UTC`
+- `shadow` → copied from releng profile (passwordless root)
+- `mkinitcpio.conf.d/archiso.conf` → archiso initramfs hooks (CRITICAL)
+
+### Required airootfs symlinks
+```
+iso/airootfs/etc/systemd/system/
+├── multi-user.target.wants/
+│   └── arch-installer.service -> /etc/systemd/system/arch-installer.service
+├── getty@tty1.service -> /dev/null          (masked)
+└── systemd-firstboot.service -> /dev/null   (masked)
+```
+
+### Key ISO files
+
+| File | Purpose |
+|------|---------|
+| `iso/profiledef.sh` | ISO metadata, bootmodes (BIOS+UEFI), squashfs compression, file permissions |
+| `iso/packages.x86_64` | All packages baked in: Python, GTK3, WebKit2GTK, Xorg, fonts, disk tools |
+| `iso/pacman.conf` | Pacman config used during ISO build |
+| `iso/airootfs/etc/mkinitcpio.conf.d/archiso.conf` | CRITICAL — archiso hooks for initramfs |
+| `iso/airootfs/etc/systemd/system/arch-installer.service` | Systemd unit that starts the installer session |
+| `iso/airootfs/usr/local/bin/arch-installer-session` | Session script: cleans locks, sets GTK theme, starts X, launches installer |
+| `iso/airootfs/etc/X11/xorg.conf.d/10-arch-installer.conf` | Minimal Xorg config |
+| `iso/efiboot/loader/entries/arch-installer.conf` | UEFI boot entry (systemd-boot) |
+| `iso/efiboot/loader/entries/arch-installer-debug.conf` | UEFI debug entry |
+| `iso/syslinux/syslinux.cfg` | BIOS boot menu |
+
+### Boot entries
+- **Normal** — quiet boot, autostart installer
+- **Debug** — `systemd.unit=multi-user.target`, drops to TTY for troubleshooting
+
+### cow_spacesize
+Both boot entries pass `cow_spacesize=2G` — overlayfs write layer.
+Sufficient for downloading extra packages at runtime if needed.
+
+### Troubleshooting the live ISO
+
+| Symptom | Where to look |
+|---------|---------------|
+| Installer doesn't start | `journalctl -u arch-installer.service` |
+| X fails to start | `/var/log/Xorg.0.log` |
+| Session script errors | `/var/log/arch-installer-session.log` |
+| Text invisible in installer | `GTK_THEME=Adwaita:dark` missing from session script |
+| "Failed to start Switch Root" | `airootfs/etc/mkinitcpio.conf.d/archiso.conf` missing |
+| "systemd-firstboot" intercepts | Static config files missing from `airootfs/etc/` |
+| Build `realpath` error | Work dir is on NFS — use `/tmp/archiso-work` instead |
+| Build fails (mount errors) | `sudo umount -R /tmp/archiso-work` then retry |
+
+---
+
 ## Known Issues / Deferred
 
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
 - [ ] Secure Boot key enrollment — deferred post-bootloader
-- [ ] VM smoke test with dry_run = False not yet completed — blocked by live ISO
-      Python version mismatch (ISO ships Python 3.14, packages built for 3.13)
-- [ ] Full end-to-end install test not yet performed
-
----
-
-## Next Phase — Custom ISO with archiso
-
-**Goal:** A custom Arch ISO that boots directly into the GTK installer with all
-dependencies pre-installed. No manual pacman installs, no cowspace hacks, no
-Python version mismatches. Boot and the installer starts automatically.
-
-**Why:** The standard Arch live ISO is a moving target — Python version on the ISO
-frequently mismatches the python-gobject package on the mirrors, making it
-impossible to reliably install GTK deps at runtime. Baking everything into a
-custom ISO solves this permanently.
-
-**Plan:**
-1. Install `archiso` on dev machine: `pacman -S archiso`
-2. Copy the baseline profile: `cp -r /usr/share/archiso/configs/releng/ ~/arch-iso-profile`
-3. Add deps to `packages.x86_64`:
-   - python
-   - python-gobject
-   - python-cairo
-   - gtk3
-   - webkit2gtk
-   - gobject-introspection
-4. Copy installer repo into the ISO filesystem via `airootfs/`
-5. Add a systemd service or getty autologin + xinit to autostart the installer as root on boot
-6. Build: `mkarchiso -v -o ~/iso-out ~/arch-iso-profile`
-7. Test in VM
-
-**Autostart mechanism** (to be designed):
-- Option A: systemd service that runs `./arch-installer` after graphical target
-- Option B: getty autologin as root → `.bash_profile` launches installer
-- Option C: `.desktop` autostart entry if a minimal WM is included
+- [ ] Full end-to-end install test — pacstrap and most steps complete successfully.
+      Remaining known issues:
+      - Mirror reliability: kernel.org drops connections under load — ISO mirrorlist
+        needs more fallback mirrors
+      - `file_permissions` in profiledef.sh not applying chmod to session script —
+        workaround: `chmod +x /usr/local/bin/arch-installer-session` after boot
+- [ ] Plymouth boot splash — custom boot splash using project icon with pulsing
+      glow animation. Hides bootloader menu and kernel output, fades out when
+      GTK installer is ready. Stack: Plymouth + custom theme (script + PNG) +
+      `quiet splash` kernel params + 0 bootloader timeout. Deferred until
+      installer is confirmed working end-to-end.
 
 ---
 
@@ -430,7 +546,7 @@ custom ISO solves this permanently.
 | 8       | feat(stage-10): timezone with live clock                                     |
 | 8       | feat(stage-11): system config — hostname, root password, NTP                 |
 | 8       | fix: password strength colors, NTP checkbox visibility                       |
-| 8       : docs: update CLAUDE.md and README.md                                         |
+| 8       | docs: update CLAUDE.md and README.md                                         |
 | 9       | refactor: reorder stages — all choices before pacstrap                       |
 | 9       | feat(stage-11): user setup — username, password, sudo, shell, groups         |
 | 9       | fix(filesystem): visibility timing bug on beginner level                     |
@@ -448,3 +564,17 @@ custom ISO solves this permanently.
 | 13      | fix(launcher): auto-install GTK deps and expand cowspace on live ISO         |
 | 13      | chore: move repo from ~/arch-installer to NAS                                |
 | 13      | docs: update CLAUDE.md — custom ISO plan, Python version issue, next phase   |
+| 14      | feat(iso): archiso profile — build.sh, profiledef, packages, autostart service|
+| 14      | fix(iso): correct efiboot entry paths to use %INSTALL_DIR%/%ARCH% variables  |
+| 14      | docs: update CLAUDE.md — Plymouth splash deferred, ISO boot entry fix noted  |
+| 15      | fix(iso): add mkinitcpio.conf.d/archiso.conf — fixes "Failed to start Switch Root"|
+| 15      | fix(iso): replace customize_airootfs.sh with direct airootfs symlinks        |
+| 15      | fix(iso): add static locale/hostname/vconsole/localtime to suppress firstboot |
+| 15      | fix(iso): session script — socket-based X check, GTK_THEME, stale lock cleanup|
+| 15      | fix(iso): packages — add xorg-xsetroot, fonts, xorg-xset, xf86-input-libinput|
+| 15      | fix(iso): bake default mirrorlist into airootfs                              |
+| 15      | fix(state): networkmanager package name lowercase                             |
+| 15      | fix(pacstrap): run_chroot calls use keyword args — fixes user creation chroot |
+| 15      | feat(install): Begin button fixed outside scroll area                        |
+| 15      | feat(install): live status ticker during pacstrap using run_cmd_streaming    |
+| 15      | docs: update CLAUDE.md — all session 15 ISO lessons, troubleshooting table   |

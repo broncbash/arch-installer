@@ -6,14 +6,15 @@
   ![Python](https://img.shields.io/badge/python-3.x-blue?logo=python&logoColor=white)
   ![GTK](https://img.shields.io/badge/GTK-3-blueviolet?logo=gtk)
   ![License](https://img.shields.io/badge/license-GPLv3-green)
-  ![Status](https://img.shields.io/badge/status-in_development-orange)
+  ![Status](https://img.shields.io/badge/status-VM_testing-yellow)
   ![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?logo=arch-linux&logoColor=white)
 </div>
 
 ---
 
 > ⚠️ **This project is in active development and not yet ready for use on real hardware.**
-> Testing is currently done in VMs and dry-run mode only.
+> The installer boots and runs from a custom ISO in a VM. End-to-end install testing
+> is in progress.
 
 ---
 
@@ -39,13 +40,16 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **User setup** — username, password, sudo, shell picker, group checkboxes
 - **Review & Confirm** — full summary of every selection before anything touches
   disk; ✏ Edit buttons jump directly back to any stage and return automatically
-- **Base system install** — pacstrap with live log, per-step progress, retry on error
+- **Base system install** — pacstrap with live streaming status ticker, per-step
+  progress, retry on error; Begin button fixed at bottom outside scroll area
 - **Bootloader selection** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; options
   filtered by experience level with live card switching
 - **Complete / Reboot** — post-install chroot config: locale, keyboard, timezone,
   initramfs (mkinitcpio or dracut), bootloader install, service enablement,
   unmount, reboot
 - **Dry-run mode** — yellow banner + full simulation so you can test safely anywhere
+- **Custom bootable ISO** — archiso profile boots directly into the GTK installer
+  with no desktop environment required; tested in QEMU/KVM
 
 ---
 
@@ -70,7 +74,40 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 14 | Bootloader | ✅ Complete |
 | 15 | Complete / Reboot | ✅ Complete |
 
-All 16 stages complete. 🎉
+All 16 stages complete. End-to-end install testing in progress. 🚧
+
+---
+
+## Custom ISO
+
+The project includes a full archiso profile that builds a bootable ISO with the
+GTK installer launching automatically on boot — no desktop environment, no login
+prompt.
+
+### Build the ISO
+
+```bash
+sudo rm -rf /tmp/archiso-work /tmp/archiso-out
+sudo mkarchiso -v \
+  -w /tmp/archiso-work \
+  -o /tmp/archiso-out \
+  /path/to/arch-installer/iso
+```
+
+The work directory **must be local** (not NFS) — use `/tmp/archiso-work`.
+
+### What the ISO does on boot
+
+1. systemd starts `arch-installer.service`
+2. Service runs `/usr/local/bin/arch-installer-session` as root on tty1
+3. Session script starts a minimal Xorg server
+4. GTK3 installer launches fullscreen automatically
+5. User goes through all stages and installs Arch Linux
+
+### Boot entries
+
+- **Normal** — quiet boot, autostart installer
+- **Debug** — `systemd.unit=multi-user.target`, drops to TTY for troubleshooting
 
 ---
 
@@ -146,6 +183,10 @@ has room to breathe — one click to expand when you need a reference.
 prior stages. Each section has an ✏ Edit button that jumps directly back to that
 stage. After editing, clicking Next on the edited screen returns automatically to
 Review — no need to step through intermediate screens.
+
+**Live install status ticker** — during pacstrap, a spinner and status line show
+the current package being downloaded or installed in real time, so the screen
+never looks frozen during long installs.
 
 ---
 
