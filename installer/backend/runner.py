@@ -17,16 +17,8 @@ In live mode (state.dry_run = False):
   - stdout + stderr are captured and returned
   - Non-zero exit codes are treated as failures
 
-Usage:
-    from installer.backend.runner import run_cmd
-
-    ok, output = run_cmd(
-        ["mkfs.ext4", "-L", "root", "/dev/sda2"],
-        state,
-        description="Format root partition as ext4",
-    )
-    if not ok:
-        # handle failure
+For long-running commands (e.g. pacstrap) use run_cmd_streaming()
+to get live output fed to a ticker callback as lines arrive.
 """
 
 import subprocess
@@ -57,7 +49,6 @@ def run_cmd(
 
     Returns:
         (success: bool, output: str)
-        output is stdout+stderr on real runs, or a dry-run message.
     """
     cmd_str = " ".join(shlex.quote(str(c)) for c in cmd)
     label   = description or cmd_str
@@ -68,7 +59,6 @@ def run_cmd(
         state.add_log(msg)
         return True, f"[dry run] {label}"
 
-    # Live run
     log.info("Running: %s", cmd_str)
     state.add_log(f"$ {cmd_str}")
 
@@ -112,6 +102,149 @@ def run_cmd(
         return False, msg
 
 
+def run_cmd_streaming(
+    cmd: list,
+    state,
+    description: str = "",
+    ticker_cb=None,
+    timeout: int = 1800,
+    cwd: str = None,
+    env: dict = None,
+) -> tuple:
+    """
+    Run a long-running command with live output streaming.
+
+    Like run_cmd() but uses Popen to stream stdout/stderr line by line.
+    Each line is passed to ticker_cb (if provided) so the UI can show
+    live status without blocking.
+
+    Args:
+        cmd:         Command as a list
+        state:       InstallState — checked for dry_run flag
+        description: Human-readable description
+        ticker_cb:   Optional callable(str) called for each output line
+        timeout:     Total seconds before giving up (default 1800 = 30 min)
+        cwd:         Working directory
+        env:         Optional environment dict override
+
+    Returns:
+        (success: bool, output: str)
+    """
+    cmd_str = " ".join(shlex.quote(str(c)) for c in cmd)
+    label   = description or cmd_str
+
+    if state.dry_run:
+        msg = f"[DRY RUN] {label}\n  $ {cmd_str}"
+        log.info(msg)
+        state.add_log(msg)
+        return True, f"[dry run] {label}"
+
+    log.info("Running (streaming): %s", cmd_str)
+    state.add_log(f"$ {cmd_str}")
+
+    lines = []
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=cwd,
+            env=env,
+        )
+
+        import threading
+        import time
+
+        timed_out = [False]
+        start = time.monotonic()
+
+        def _watchdog():
+            while proc.poll() is None:
+                if time.monotonic() - start > timeout:
+                    timed_out[0] = True
+                    proc.kill()
+                    break
+                time.sleep(1)
+
+        watchdog = threading.Thread(target=_watchdog, daemon=True)
+        watchdog.start()
+
+        for raw_line in proc.stdout:
+            line = raw_line.rstrip()
+            if not line:
+                continue
+            lines.append(line)
+            state.add_log(line)
+            log.debug(line)
+            if ticker_cb:
+                display = _extract_ticker_text(line)
+                if display:
+                    ticker_cb(display)
+
+        proc.wait()
+        watchdog.join(timeout=2)
+
+        if timed_out[0]:
+            msg = f"Timed out after {timeout}s: {label}"
+            log.error(msg)
+            state.add_log(f"ERROR: {msg}")
+            return False, msg
+
+        output = "\n".join(lines)
+        if proc.returncode == 0:
+            log.info("Success: %s", label)
+            return True, output
+
+        log.error("Failed (exit %d): %s", proc.returncode, label)
+        state.add_log(f"ERROR (exit {proc.returncode})")
+        return False, output
+
+    except FileNotFoundError:
+        msg = f"Command not found: {cmd[0]}"
+        log.error(msg)
+        state.add_log(f"ERROR: {msg}")
+        return False, msg
+
+    except Exception as exc:
+        msg = f"Unexpected error running {label}: {exc}"
+        log.error(msg, exc_info=True)
+        state.add_log(f"ERROR: {msg}")
+        return False, msg
+
+
+def _extract_ticker_text(line: str) -> str:
+    """
+    Extract a short human-readable status string from a pacstrap output line.
+
+    pacstrap / pacman output looks like:
+      ":: Synchronizing package databases..."
+      "core downloading..."
+      "(1/120) installing base..."
+      "downloading linux 6.x..."
+      "==> Creating install root at /mnt"
+      "==> Generating pacman master key..."
+    """
+    import re
+    line = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
+
+    if not line:
+        return ""
+
+    # pacman progress: "(N/M) installing packagename..."
+    m = re.match(r'\((\d+/\d+)\)\s+(.*)', line)
+    if m:
+        return f"{m.group(1)}  {m.group(2)}"
+
+    if "downloading" in line.lower() or "installing" in line.lower():
+        return line
+
+    if line.startswith("==>") or line.startswith("::"):
+        return line
+
+    return ""
+
+
 def run_chroot(
     cmd: list,
     state,
@@ -122,20 +255,18 @@ def run_chroot(
     """
     Run a command inside arch-chroot.
 
-    Equivalent to: arch-chroot <mountpoint> <cmd...>
-
     Args:
-        cmd:        Command to run inside chroot
-        state:      InstallState
-        mountpoint: Chroot target (default /mnt)
+        cmd:         Command to run inside chroot
+        state:       InstallState
+        mountpoint:  Chroot target (default /mnt)
         description: Human-readable description
-        timeout:    Seconds before timeout
+        timeout:     Seconds before timeout
 
     Returns:
         (success: bool, output: str)
     """
-    full_cmd     = ["arch-chroot", mountpoint] + cmd
-    desc         = description or f"chroot: {' '.join(cmd)}"
+    full_cmd = ["arch-chroot", mountpoint] + cmd
+    desc     = description or f"chroot: {' '.join(cmd)}"
     return run_cmd(full_cmd, state, description=desc, timeout=timeout)
 
 
@@ -147,8 +278,6 @@ def run_script(
 ) -> tuple:
     """
     Run a shell script string via bash -c.
-
-    Useful for multi-step shell operations that are easier as one-liners.
 
     Args:
         script:      Shell script string
