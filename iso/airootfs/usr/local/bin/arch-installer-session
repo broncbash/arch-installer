@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# arch-installer-session
+# Launched by arch-installer.service as root on tty1.
+# Starts a minimal Xorg session and runs the GTK installer inside it.
+
+set -euo pipefail
+
+INSTALLER_DIR="/opt/arch-installer"
+LOG_FILE="/var/log/arch-installer-session.log"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "=== arch-installer-session starting at $(date) ==="
+
+if [[ $EUID -ne 0 ]]; then
+    echo "ERROR: must run as root" >&2
+    exit 1
+fi
+
+if [[ ! -d "$INSTALLER_DIR" ]]; then
+    echo "ERROR: installer not found at $INSTALLER_DIR" >&2
+    echo "       Was the repo copied into the ISO correctly?" >&2
+    exit 1
+fi
+
+rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
+
+export HOME=/root
+export DISPLAY=:0
+export XAUTHORITY=/root/.Xauthority
+export XDG_RUNTIME_DIR=/run/user/0
+export GTK_THEME=Adwaita:dark
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+echo "Starting Xorg on :0 (tty1)..."
+Xorg :0 vt1 -nolisten tcp -noreset -logfile /var/log/Xorg.0.log &
+XORG_PID=$!
+
+for i in $(seq 1 40); do
+    if [[ -e /tmp/.X11-unix/X0 ]]; then
+        echo "Xorg ready after ${i} attempts."
+        break
+    fi
+    sleep 0.5
+done
+
+if [[ ! -e /tmp/.X11-unix/X0 ]]; then
+    echo "ERROR: Xorg failed to start after 20s. Check /var/log/Xorg.0.log" >&2
+    kill "$XORG_PID" 2>/dev/null || true
+    exit 1
+fi
+
+xsetroot -solid '#1a1a2e' -cursor_name left_ptr || true
+xset s off s noblank dpms 0 0 0 || true
+
+echo "Launching arch-installer from $INSTALLER_DIR ..."
+cd "$INSTALLER_DIR"
+python3 -m installer.main
+EXIT_CODE=$?
+echo "arch-installer exited with code $EXIT_CODE at $(date)"
+
+kill "$XORG_PID" 2>/dev/null || true
+wait "$XORG_PID" 2>/dev/null || true
+
+exit "$EXIT_CODE"
