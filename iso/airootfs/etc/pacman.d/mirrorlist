@@ -1,0 +1,6 @@
+# Default mirrorlist for arch-installer live ISO
+# The mirror selection stage writes a fresh mirrorlist to the installed system.
+Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch
+Server = https://mirror.arizona.edu/archlinux/$repo/os/$arch
+Server = https://mirrors.mit.edu/archlinux/$repo/os/$arch
+Server = https://ftp.osuosl.org/pub/archlinux/$repo/os/$arch
