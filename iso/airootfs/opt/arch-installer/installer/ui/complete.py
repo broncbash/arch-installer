@@ -33,6 +33,140 @@ from installer.backend.runner import run_cmd, run_chroot, run_script
 
 MOUNTPOINT = "/mnt"
 
+# Plymouth script written into the INSTALLED system (not the ISO).
+# The ISO boot splash uses the plain version without a password dialog.
+# This version adds the LUKS passphrase callback for the installed system's boot.
+_PLYMOUTH_INSTALLED_SCRIPT = r"""
+// arch-installer Plymouth theme — installed system
+// Y-axis flip effect with pulsing cyan glow + LUKS password dialog
+
+Window.SetBackgroundTopColor(0.07, 0.07, 0.12);
+Window.SetBackgroundBottomColor(0.05, 0.05, 0.09);
+
+logo.image  = Image("logo.png");
+glow.image  = Image("glow.png");
+
+glow.sprite = Sprite();
+glow.sprite.SetImage(glow.image);
+glow.sprite.SetZ(1);
+
+logo.sprite = Sprite();
+logo.sprite.SetImage(logo.image);
+logo.sprite.SetZ(2);
+
+logo.w = logo.image.GetWidth();
+logo.h = logo.image.GetHeight();
+glow.w = glow.image.GetWidth();
+glow.h = glow.image.GetHeight();
+
+glow.sprite.SetX(Window.GetWidth()  / 2 - glow.w / 2);
+glow.sprite.SetY(Window.GetHeight() / 2 - glow.h / 2);
+
+flip_angle = 0.0;
+flip_speed = 0.04;
+glow_alpha = 0.3;
+glow_dir   = 1;
+
+progress_bar.image  = Image.New(1, 3);
+progress_bar.sprite = Sprite(progress_bar.image);
+progress_bar.sprite.SetX(0);
+progress_bar.sprite.SetY(Window.GetHeight() - 4);
+progress_bar.sprite.SetZ(4);
+
+fun refresh_callback()
+{
+    flip_angle = flip_angle + flip_speed;
+    if (flip_angle > 6.2832) flip_angle = 0.0;
+    scale_x = Math.Abs(Math.Cos(flip_angle));
+    if (scale_x < 0.02) scale_x = 0.02;
+    scaled_w = Math.Int(logo.w * scale_x);
+    if (scaled_w < 1) scaled_w = 1;
+    scaled = logo.image.Scale(scaled_w, logo.h);
+    logo.sprite.SetImage(scaled);
+    logo.sprite.SetX(Window.GetWidth()  / 2 - scaled_w / 2);
+    logo.sprite.SetY(Window.GetHeight() / 2 - logo.h   / 2);
+    glow_alpha = glow_alpha + (glow_dir * 0.015);
+    if (glow_alpha >= 0.85) { glow_alpha = 0.85; glow_dir = -1; }
+    if (glow_alpha <= 0.15) { glow_alpha = 0.15; glow_dir =  1; }
+    glow.sprite.SetOpacity(glow_alpha);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback(duration, progress)
+{
+    if (progress > 1.0) progress = 1.0;
+    bar_width = Math.Int(Window.GetWidth() * progress);
+    if (bar_width < 1) bar_width = 1;
+    bar_img = Image.New(bar_width, 3);
+    bar_img.Rectangle(0, 0, bar_width, 3, 0.36, 0.78, 0.94, 1.0);
+    progress_bar.sprite.SetImage(bar_img);
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+message_sprite = Sprite();
+message_sprite.SetZ(5);
+fun display_message_callback(text)
+{
+    my_image = Image.Text(text, 0.8, 0.8, 0.8, 1.0);
+    message_sprite.SetImage(my_image);
+    message_sprite.SetX(Window.GetWidth()  / 2 - my_image.GetWidth()  / 2);
+    message_sprite.SetY(Window.GetHeight() - 40);
+}
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+fun hide_message_callback(text)
+{
+    message_sprite.SetImage(Image.New(1,1));
+}
+Plymouth.SetHideMessageFunction(hide_message_callback);
+
+// ── LUKS passphrase dialog ────────────────────────────────────────────────────
+password_label  = Sprite();
+password_label.SetZ(10);
+password_box    = Sprite();
+password_box.SetZ(10);
+password_text   = Sprite();
+password_text.SetZ(11);
+
+fun display_password_callback(prompt, bullets)
+{
+    screen_w = Window.GetWidth();
+    screen_h = Window.GetHeight();
+    box_w = 400;
+    box_h = 90;
+    box_x = screen_w / 2 - box_w / 2;
+    box_y = Math.Int(screen_h * 0.62);
+
+    label_img = Image.Text(prompt, 0.88, 0.88, 0.88);
+    password_label.SetImage(label_img);
+    password_label.SetX(box_x);
+    password_label.SetY(box_y - label_img.GetHeight() - 8);
+    password_label.SetOpacity(1);
+
+    box_img = Image.New(box_w, box_h);
+    box_img.Rectangle(0,       0,       box_w,   box_h,   0.07, 0.07, 0.12, 0.95);
+    box_img.Rectangle(0,       0,       box_w,   2,       0.22, 0.82, 0.95, 1.0);
+    box_img.Rectangle(0,       box_h-2, box_w,   2,       0.22, 0.82, 0.95, 1.0);
+    box_img.Rectangle(0,       0,       2,       box_h,   0.22, 0.82, 0.95, 1.0);
+    box_img.Rectangle(box_w-2, 0,       2,       box_h,   0.22, 0.82, 0.95, 1.0);
+    password_box.SetImage(box_img);
+    password_box.SetX(box_x);
+    password_box.SetY(box_y);
+    password_box.SetOpacity(1);
+
+    bullet_str = "";
+    i = 0;
+    while (i < bullets) { bullet_str = bullet_str + "* "; i = i + 1; }
+    if (bullets == 0) { bullet_str = "Enter passphrase..."; }
+    bullet_img = Image.Text(bullet_str, 0.36, 0.78, 0.94);
+    password_text.SetImage(bullet_img);
+    password_text.SetX(box_x + 16);
+    password_text.SetY(box_y + box_h / 2 - bullet_img.GetHeight() / 2);
+    password_text.SetOpacity(1);
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+"""
+
+
 # ── Step definitions ──────────────────────────────────────────────────────────
 # Note: the initramfs label is updated at runtime in _build_ready_page() and
 # _build_running_page() to reflect the chosen generator.
@@ -66,13 +200,13 @@ def _step_locale(state) -> tuple:
     locale = state.locale or "en_US.UTF-8"
     ok, out = run_chroot(
         ["sed", "-i", f"s/^#{locale}/{locale}/", "/etc/locale.gen"],
-        state, f"Uncomment {locale} in locale.gen"
+        state, description=f"Uncomment {locale} in locale.gen"
     )
     if not ok:
         return False, out
     logs.append(out)
 
-    ok, out = run_chroot(["locale-gen"], state, "Run locale-gen")
+    ok, out = run_chroot(["locale-gen"], state, description="Run locale-gen")
     if not ok:
         return False, out
     logs.append(out)
@@ -107,7 +241,7 @@ def _step_timezone(state) -> tuple:
 
     ok, out = run_chroot(
         ["ln", "-sf", f"/usr/share/zoneinfo/{tz}", "/etc/localtime"],
-        state, f"Link /etc/localtime → {tz}"
+        state, description=f"Link /etc/localtime → {tz}"
     )
     if not ok:
         return False, out
@@ -115,7 +249,7 @@ def _step_timezone(state) -> tuple:
 
     ok, out = run_chroot(
         ["hwclock", "--systohc"],
-        state, "Sync hardware clock (hwclock --systohc)"
+        state, description="Sync hardware clock (hwclock --systohc)"
     )
     if not ok:
         return False, out
@@ -128,34 +262,70 @@ def _step_initramfs(state) -> tuple:
     """Generate the initramfs using mkinitcpio or dracut."""
     logs = []
     gen = getattr(state, "initramfs_generator", "mkinitcpio")
+    has_luks = bool(state.luks_passphrase)
 
     if gen == "dracut":
-        # dracut writes the initramfs directly — --force overwrites any existing image
+        # dracut auto-detects LUKS — no extra config needed
         ok, out = run_chroot(
             ["dracut", "--force"],
-            state, "Generate initramfs (dracut --force)"
+            state, description="Generate initramfs (dracut --force)"
         )
         if not ok:
             return False, out
         logs.append(out)
 
     else:
-        # mkinitcpio path (default)
-        # If LUKS + UKI, the encrypt hook must be present in mkinitcpio.conf.
-        if state.bootloader_uki_needs_decrypt:
-            ok, out = run_chroot(
-                ["sed", "-i",
-                 "s/^HOOKS=(.*block/& encrypt/",
-                 "/etc/mkinitcpio.conf"],
-                state, "Add encrypt hook to mkinitcpio.conf"
-            )
-            if not ok:
-                return False, out
-            logs.append(out)
+        # mkinitcpio path — edit mkinitcpio.conf directly in Python
+        # so we don't rely on fragile sed backreferences.
+        # Standard default HOOKS line on a fresh Arch install:
+        #   HOOKS=(base udev autodetect modconf kms block filesystems keyboard fsck)
+        # With LUKS we need 'encrypt' after 'block'.
+        # With Plymouth we need 'plymouth' after 'udev'.
+        if not state.dry_run:
+            conf_path = f"{MOUNTPOINT}/etc/mkinitcpio.conf"
+            try:
+                with open(conf_path) as f:
+                    conf = f.read()
+
+                import re as _re
+
+                def _patch_hooks(line):
+                    """Add encrypt and/or plymouth hooks to a HOOKS=(...) line."""
+                    m = _re.match(r"(HOOKS=\()([^)]+)(\))", line.strip())
+                    if not m:
+                        return line
+                    hooks = m.group(2).split()
+
+                    # Always add 'plymouth' after 'udev' for boot splash
+                    if "plymouth" not in hooks and "udev" in hooks:
+                        idx = hooks.index("udev")
+                        hooks.insert(idx + 1, "plymouth")
+
+                    # Add 'encrypt' after 'block' only when LUKS is used
+                    if has_luks and "encrypt" not in hooks and "block" in hooks:
+                        idx = hooks.index("block")
+                        hooks.insert(idx + 1, "encrypt")
+
+                    return f"HOOKS=({' '.join(hooks)})"
+
+                patched = []
+                for line in conf.splitlines():
+                    if line.strip().startswith("HOOKS="):
+                        patched.append(_patch_hooks(line))
+                    else:
+                        patched.append(line)
+                conf = "\n".join(patched) + "\n"
+
+                with open(conf_path, "w") as f:
+                    f.write(conf)
+                hook_msg = "plymouth" + (" + encrypt" if has_luks else "")
+                logs.append(f"Patched mkinitcpio.conf HOOKS: added {hook_msg}")
+            except OSError as e:
+                return False, f"Could not patch mkinitcpio.conf: {e}"
 
         ok, out = run_chroot(
             ["mkinitcpio", "-P"],
-            state, "Generate initramfs (mkinitcpio -P)"
+            state, description="Generate initramfs (mkinitcpio -P)"
         )
         if not ok:
             return False, out
@@ -170,20 +340,198 @@ def _step_bootloader(state) -> tuple:
     logs = []
 
     if bl == "grub":
+        # ── LUKS: configure /etc/default/grub for encrypted boot ─────────────
+        if state.luks_passphrase:
+            grub_default = f"{MOUNTPOINT}/etc/default/grub"
+            if not state.dry_run:
+                try:
+                    import os as _os, re as _re, subprocess as _sp
+                    _os.makedirs(f"{MOUNTPOINT}/etc/default", exist_ok=True)
+                    try:
+                        with open(grub_default) as f:
+                            grub_txt = f.read()
+                    except FileNotFoundError:
+                        grub_txt = ""
+
+                    # 1. GRUB_ENABLE_CRYPTODISK=y — lets GRUB decrypt its own partition
+                    if "GRUB_ENABLE_CRYPTODISK" in grub_txt:
+                        grub_txt = _re.sub(
+                            r"#?GRUB_ENABLE_CRYPTODISK=.*",
+                            "GRUB_ENABLE_CRYPTODISK=y", grub_txt
+                        )
+                    else:
+                        grub_txt += "\nGRUB_ENABLE_CRYPTODISK=y\n"
+
+                    # 2. Get the LUKS partition UUID via blkid
+                    # Use the original block device path saved by _step_luks
+                    # (p.device has been overwritten to /dev/mapper/cryptroot)
+                    luks_uuid = ""
+                    luks_block = getattr(state, "luks_block_device", "")
+                    if not luks_block:
+                        # Fallback: scan all block devices for crypto_LUKS type
+                        try:
+                            result = _sp.run(
+                                ["blkid", "-t", "TYPE=crypto_LUKS",
+                                 "-o", "value", "-s", "UUID"],
+                                capture_output=True, text=True, timeout=10
+                            )
+                            uuids = result.stdout.strip().splitlines()
+                            if uuids:
+                                luks_uuid = uuids[0].strip()
+                        except Exception:
+                            pass
+                    else:
+                        # Direct blkid on the known LUKS block device — reliable
+                        try:
+                            result = _sp.run(
+                                ["blkid", "-o", "value", "-s", "UUID", luks_block],
+                                capture_output=True, text=True, timeout=10
+                            )
+                            luks_uuid = result.stdout.strip()
+                        except Exception:
+                            pass
+
+                    # 3. Set cryptdevice= and root= kernel parameters
+                    if luks_uuid:
+                        crypt_param = f"cryptdevice=UUID={luks_uuid}:cryptroot root=/dev/mapper/cryptroot"
+                        if "GRUB_CMDLINE_LINUX=" in grub_txt:
+                            grub_txt = _re.sub(
+                                r'GRUB_CMDLINE_LINUX="[^"]*"',
+                                f'GRUB_CMDLINE_LINUX="{crypt_param}"',
+                                grub_txt
+                            )
+                        else:
+                            grub_txt += f'\nGRUB_CMDLINE_LINUX="{crypt_param}"\n'
+                        logs.append(f"Set cryptdevice=UUID={luks_uuid}:cryptroot")
+
+                    # 4. Create a keyfile so GRUB only asks once (not twice).
+                    #    GRUB_ENABLE_CRYPTODISK=y makes GRUB ask for passphrase
+                    #    to decrypt its own files, then the initramfs asks again.
+                    #    A keyfile embedded in the initramfs lets cryptsetup
+                    #    auto-unlock at boot without a second prompt.
+                    if luks_uuid and luks_block:
+                        try:
+                            keyfile_path = f"{MOUNTPOINT}/etc/cryptsetup-keys.d/cryptroot.key"
+                            _os.makedirs(f"{MOUNTPOINT}/etc/cryptsetup-keys.d", exist_ok=True)
+                            # Generate 512-byte random keyfile
+                            key_bytes = _os.urandom(512)
+                            with open(keyfile_path, "wb") as kf:
+                                kf.write(key_bytes)
+                            _os.chmod(keyfile_path, 0o400)
+                            safe_pass = state.luks_passphrase.replace("'", "'\\''")
+                            # Add the keyfile to LUKS using existing passphrase
+                            result = _sp.run(
+                                ["bash", "-c",
+                                 f"echo -n '{safe_pass}' | "
+                                 f"cryptsetup luksAddKey {luks_block} {keyfile_path}"],
+                                capture_output=True, text=True, timeout=30
+                            )
+                            if result.returncode == 0:
+                                # Tell mkinitcpio to include the keyfile
+                                conf_path = f"{MOUNTPOINT}/etc/mkinitcpio.conf"
+                                try:
+                                    with open(conf_path) as f:
+                                        mkinit = f.read()
+                                    if "FILES=()" in mkinit:
+                                        mkinit = mkinit.replace(
+                                            "FILES=()",
+                                            "FILES=(/etc/cryptsetup-keys.d/cryptroot.key)"
+                                        )
+                                    elif "FILES=(" in mkinit and "/cryptroot.key" not in mkinit:
+                                        mkinit = _re.sub(
+                                            r"FILES=\(([^)]*)\)",
+                                            r"FILES=(\1 /etc/cryptsetup-keys.d/cryptroot.key)",
+                                            mkinit
+                                        )
+                                    with open(conf_path, "w") as f:
+                                        f.write(mkinit)
+                                except OSError:
+                                    pass
+                                # Add rd.luks.key to kernel params for systemd path
+                                crypt_param += f" rd.luks.key={luks_uuid}=/etc/cryptsetup-keys.d/cryptroot.key"
+                                logs.append("Created LUKS keyfile — single passphrase prompt at boot")
+                            else:
+                                state.add_log(f"[warn] Could not add keyfile to LUKS: {result.stderr}")
+                        except Exception as e:
+                            state.add_log(f"[warn] Keyfile setup failed (non-fatal): {e}")
+
+                    # Add quiet splash for Plymouth (non-destructive — won't
+                    # override if user already has GRUB_CMDLINE_LINUX_DEFAULT)
+                    if "GRUB_CMDLINE_LINUX_DEFAULT=" not in grub_txt:
+                        grub_txt += 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
+                    else:
+                        # Inject quiet splash into existing default cmdline
+                        import re as _re2
+                        def _add_quiet(m):
+                            v = m.group(1)
+                            if "quiet" not in v:
+                                v += " quiet"
+                            if "splash" not in v:
+                                v += " splash"
+                            return f'GRUB_CMDLINE_LINUX_DEFAULT="{v.strip()}"'
+                        grub_txt = _re2.sub(
+                            r'GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"'
+                            , _add_quiet, grub_txt)
+
+                    with open(grub_default, "w") as f:
+                        f.write(grub_txt)
+                    logs.append("Set GRUB_ENABLE_CRYPTODISK=y in /etc/default/grub")
+                except OSError as e:
+                    state.add_log(f"[warn] Could not update /etc/default/grub: {e}")
+            else:
+                state.add_log("[dry run] Would set GRUB_ENABLE_CRYPTODISK=y and cryptdevice=")
+
+        # ── quiet splash — always needed for Plymouth boot splash ────────────
+        if not state.dry_run:
+            try:
+                import os as _os, re as _re3
+                grub_default = f"{MOUNTPOINT}/etc/default/grub"
+                _os.makedirs(f"{MOUNTPOINT}/etc/default", exist_ok=True)
+                try:
+                    with open(grub_default) as f:
+                        grub_txt2 = f.read()
+                except FileNotFoundError:
+                    grub_txt2 = ""
+                if "GRUB_CMDLINE_LINUX_DEFAULT=" not in grub_txt2:
+                    grub_txt2 += 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
+                else:
+                    def _qs(m):
+                        v = m.group(1)
+                        if "quiet" not in v: v += " quiet"
+                        if "splash" not in v: v += " splash"
+                        return f'GRUB_CMDLINE_LINUX_DEFAULT="{v.strip()}"'
+                    grub_txt2 = _re3.sub(
+                        r'GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"'
+                        , _qs, grub_txt2)
+                with open(grub_default, "w") as f:
+                    f.write(grub_txt2)
+                logs.append("Set GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"")
+            except OSError as e:
+                state.add_log(f"[warn] Could not set quiet splash: {e}")
+
+        # ── grub-install ──────────────────────────────────────────────────────
         if state.boot_mode == "uefi":
+            # Determine where the ESP is actually mounted (auto = /boot/efi,
+            # manual may use /boot or /efi — read from state.partitions)
+            efi_dir = "/boot/efi"  # safe default matching auto partition scheme
+            for p in state.partitions:
+                if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
+                    efi_dir = p.mountpoint
+                    break
             ok, out = run_chroot(
                 ["grub-install",
                  "--target=x86_64-efi",
-                 "--efi-directory=/boot",
-                 "--bootloader-id=GRUB"],
-                state, "grub-install (UEFI)"
+                 f"--efi-directory={efi_dir}",
+                 "--bootloader-id=GRUB",
+                 "--recheck"],
+                state, description="grub-install (UEFI)"
             )
         else:
             ok, out = run_chroot(
                 ["grub-install",
                  "--target=i386-pc",
                  state.target_disk],
-                state, "grub-install (BIOS)"
+                state, description="grub-install (BIOS)"
             )
         if not ok:
             return False, out
@@ -191,16 +539,21 @@ def _step_bootloader(state) -> tuple:
 
         ok, out = run_chroot(
             ["grub-mkconfig", "-o", "/boot/grub/grub.cfg"],
-            state, "Generate grub.cfg"
+            state, description="Generate grub.cfg"
         )
         if not ok:
             return False, out
         logs.append(out)
 
     elif bl == "systemd-boot":
+        efi_dir = "/boot/efi"
+        for p in state.partitions:
+            if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
+                efi_dir = p.mountpoint
+                break
         ok, out = run_chroot(
-            ["bootctl", "--path=/boot", "install"],
-            state, "bootctl install"
+            ["bootctl", f"--path={efi_dir}", "install"],
+            state, description="bootctl install"
         )
         if not ok:
             return False, out
@@ -232,7 +585,7 @@ def _step_bootloader(state) -> tuple:
     elif bl == "refind":
         ok, out = run_chroot(
             ["refind-install"],
-            state, "refind-install"
+            state, description="refind-install"
         )
         if not ok:
             return False, out
@@ -252,7 +605,7 @@ def _step_bootloader(state) -> tuple:
              "--label", "Arch Linux",
              "--loader", "/vmlinuz-linux",
              "--unicode", "root=LABEL=root rw initrd=\\initramfs-linux.img"],
-            state, "Register EFIStub entry via efibootmgr"
+            state, description="Register EFIStub entry via efibootmgr"
         )
         if not ok:
             return False, out
@@ -263,7 +616,7 @@ def _step_bootloader(state) -> tuple:
         ok, out = run_chroot(
             ["mkinitcpio", "-p", "linux", "--uki",
              "/boot/EFI/Linux/arch-linux.efi"],
-            state, "Build Unified Kernel Image"
+            state, description="Build Unified Kernel Image"
         )
         if not ok:
             return False, out
@@ -280,13 +633,52 @@ def _step_services(state) -> tuple:
     logs = []
     services = []
 
-    # Network manager
-    nm = state.network_manager or ""
-    if nm == "NetworkManager":
+    # ── Plymouth: install theme + set it as default ───────────────────────────
+    # Plymouth gives the Fedora-style graphical password entry at boot.
+    # The arch-installer theme is bundled in the ISO and pacstrap copies it.
+    if state.luks_passphrase or True:  # always nice to have a boot splash
+        # Install theme files into new system
+        if not state.dry_run:
+            import os as _os, shutil as _sh
+            theme_src = "/usr/share/plymouth/themes/arch-installer"
+            theme_dst = f"{MOUNTPOINT}/usr/share/plymouth/themes/arch-installer"
+            if _os.path.exists(theme_src):
+                try:
+                    _sh.copytree(theme_src, theme_dst, dirs_exist_ok=True)
+                    logs.append("Copied arch-installer Plymouth theme to new system")
+
+                    # The ISO script has no password dialog (it's just a boot splash).
+                    # Overwrite the installed copy with a version that adds the
+                    # LUKS passphrase callback — only needed on the installed system.
+                    installed_script = f"{theme_dst}/arch-installer.script"
+                    with open(installed_script, "w") as _sf:
+                        _sf.write(_PLYMOUTH_INSTALLED_SCRIPT)
+                    logs.append("Wrote LUKS-capable Plymouth script to installed system")
+                except Exception as e:
+                    state.add_log(f"[warn] Plymouth theme copy failed: {e}")
+
+        # Write plymouthd.conf to new system
+        if not state.dry_run:
+            try:
+                import os as _os
+                _os.makedirs(f"{MOUNTPOINT}/etc/plymouth", exist_ok=True)
+                with open(f"{MOUNTPOINT}/etc/plymouth/plymouthd.conf", "w") as f:
+                    f.write("[Daemon]\nTheme=arch-installer\nShowDelay=0\n")
+                logs.append("Configured Plymouth theme: arch-installer")
+            except OSError as e:
+                state.add_log(f"[warn] Could not write plymouthd.conf: {e}")
+
+        services.append("plymouth")
+
+    # Network manager — package name is lowercase but service name is mixed case
+    nm = (state.network_manager or "").lower()
+    if nm == "networkmanager":
         services.append("NetworkManager")
     elif nm == "systemd-networkd":
         services.append("systemd-networkd")
         services.append("systemd-resolved")
+    elif nm == "iwd":
+        services.append("iwd")
 
     # NTP
     if state.enable_ntp:
@@ -297,17 +689,50 @@ def _step_services(state) -> tuple:
     if dm in ("gdm", "sddm", "lightdm"):
         services.append(dm)
 
+    if not services:
+        return True, "No services to enable."
+
+    # Configure LightDM GTK greeter to use Adwaita dark — matches installer theme.
+    # Write the config file directly from Python to avoid shell quoting issues.
+    if dm == "lightdm":
+        greeter_conf_path = f"{MOUNTPOINT}/etc/lightdm/lightdm-gtk-greeter.conf"
+        greeter_conf = (
+            "[greeter]\n"
+            "theme-name = Adwaita\n"
+            "prefer-dark-theme = true\n"
+            "icon-theme-name = Adwaita\n"
+            "font-name = Sans 11\n"
+            "xft-antialias = true\n"
+            "xft-hintstyle = hintslight\n"
+            "xft-rgba = rgb\n"
+            "background = #1e1e2e\n"
+            "user-background = false\n"
+        )
+        if not state.dry_run:
+            try:
+                import os as _os
+                _os.makedirs(f"{MOUNTPOINT}/etc/lightdm", exist_ok=True)
+                with open(greeter_conf_path, "w") as f:
+                    f.write(greeter_conf)
+                logs.append("LightDM greeter configured with Adwaita dark theme.")
+            except OSError as e:
+                state.add_log(f"[warn] Could not write LightDM greeter config: {e}")
+        else:
+            state.add_log(f"[dry run] Would write LightDM greeter config to {greeter_conf_path}")
+            logs.append("[dry run] LightDM greeter config skipped.")
+
     for svc in services:
         ok, out = run_chroot(
             ["systemctl", "enable", svc],
-            state, f"Enable {svc}"
+            state, description=f"Enable {svc}"
         )
         if not ok:
-            return False, out
-        logs.append(out)
-
-    if not services:
-        return True, "No services to enable."
+            # Non-fatal: service may not be installed (e.g. no DE selected)
+            # Log the warning but keep going
+            logs.append(f"[warn] Could not enable {svc}: {out}")
+            state.add_log(f"[warn] systemctl enable {svc} failed: {out}")
+        else:
+            logs.append(out)
 
     return True, "\n".join(logs)
 

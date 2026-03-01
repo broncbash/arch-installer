@@ -51,14 +51,16 @@ EXTRA_GROUPS = [
 ]
 
 def _pw_score(pw: str) -> int:
+    """Score 0=empty, 1=weak(red), 2=fair(yellow), 3=good(green), 4=strong(blue).
+    Any non-empty password starts at 1 (weak/red) immediately."""
     if len(pw) == 0:
         return 0
-    score = 0
+    # Start at 1 so color appears on first keystroke
+    score = 1
     if len(pw) >= 8:  score += 1
     if len(pw) >= 12: score += 1
-    if re.search(r'[A-Z]', pw) and re.search(r'[a-z]', pw): score += 1
-    if re.search(r'[0-9]', pw) and re.search(r'[^a-zA-Z0-9]', pw): score += 1
-    return score
+    if re.search(r'[A-Z]', pw) and re.search(r'[a-z]', pw) and        re.search(r'[0-9]', pw) and re.search(r'[^a-zA-Z0-9]', pw): score += 1
+    return min(score, 4)
 
 _PW_LABELS  = ["", "Weak", "Fair", "Good", "Strong"]
 _PW_CLASSES = ["", "passphrase-weak", "passphrase-fair",

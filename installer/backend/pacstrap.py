@@ -39,6 +39,7 @@ INSTALL_STEPS = [
     ("luks",        "Set up encryption"),
     ("mount",       "Mount partitions"),
     ("mirrorlist",  "Write mirrorlist"),
+    ("keyring",     "Initialize package keyring"),
     ("pacstrap",    "Install base system  (this takes a while)"),
     ("fstab",       "Generate fstab"),
     ("hostname",    "Set hostname"),
@@ -65,6 +66,7 @@ def run_step(step_id: str, state, ticker_cb=None) -> tuple:
         "luks":       _step_luks,
         "mount":      _step_mount,
         "mirrorlist": _step_mirrorlist,
+        "keyring":    _step_keyring,
         "pacstrap":   _step_pacstrap,
         "fstab":      _step_fstab,
         "hostname":   _step_hostname,
@@ -80,7 +82,7 @@ def run_step(step_id: str, state, ticker_cb=None) -> tuple:
 
     try:
         # Pass ticker_cb to steps that support it (pacstrap)
-        if step_id == "pacstrap":
+        if step_id in ("pacstrap", "keyring"):
             return fn(state, ticker_cb=ticker_cb)
         return fn(state)
     except Exception as exc:
@@ -159,6 +161,7 @@ def _step_partition(state) -> tuple:
     # Tell the kernel to re-read the partition table before format step runs
     run_cmd(["partprobe", disk], state, "Re-read partition table")
     run_cmd(["sleep", "2"], state, "Wait for kernel to register partitions")
+    run_cmd(["udevadm", "settle"], state, "Wait for udev to settle device nodes")
 
     return True, "\n".join(logs)
 
@@ -227,10 +230,16 @@ def _format_partition(p, state) -> tuple:
         )
         if not ok:
             return False, out
-        return run_cmd(
+        # swapon is best-effort — the system will use it via fstab after reboot
+        # Failure here is non-fatal (device may need a moment to settle)
+        ok2, out2 = run_cmd(
             ["swapon", p.device],
             state, f"Enable swap on {p.device}"
         )
+        if not ok2:
+            state.add_log(f"[warn] swapon {p.device} failed (non-fatal): {out2}")
+        extra = ("\n" + out2) if out2 else ""
+        return True, out + extra
     else:
         return False, f"Unknown filesystem: {p.filesystem}"
 
@@ -267,7 +276,11 @@ def _step_luks(state) -> tuple:
         logs.append(out)
 
         # Open the LUKS container
-        mapper_name = f"crypt_{p.mountpoint.strip('/').replace('/', '_') or 'root'}"
+        # Use consistent "cryptroot" / "crypthome" names so GRUB's
+        # cryptdevice=UUID:cryptroot kernel param always matches
+        original_device = p.device  # save before p.device is overwritten below
+        mp_clean = p.mountpoint.strip("/").replace("/", "_") or "root"
+        mapper_name = f"crypt{mp_clean}"   # e.g. cryptroot, crypthome
         ok, out = run_cmd(
             ["bash", "-c",
              f"echo -n '{state.luks_passphrase}' | "
@@ -277,6 +290,11 @@ def _step_luks(state) -> tuple:
         if not ok:
             return False, out
         logs.append(out)
+
+        # Save the original block device path so the bootloader step
+        # can get the LUKS UUID via blkid (p.device gets overwritten next)
+        if p.mountpoint in ("/", "/home") and not getattr(state, "luks_block_device", ""):
+            state.luks_block_device = original_device  # set just before open
 
         # Update the partition device to point to the mapper
         p.device = f"/dev/mapper/{mapper_name}"
@@ -403,16 +421,117 @@ def _step_mirrorlist(state) -> tuple:
         return False, f"Failed to write mirrorlist: {e}"
 
 
+def _step_keyring(state, ticker_cb=None) -> tuple:
+    """Initialize and populate the pacman keyring before pacstrap.
+
+    On a live ISO the keyring can be stale or incompletely initialized.
+    Running pacman-key --init + --populate ensures packages can be verified.
+    """
+    if state.dry_run:
+        state.add_log("[dry run] pacman-key --init && pacman-key --populate archlinux")
+        return True, "[dry run] Keyring initialized."
+
+    logs = []
+
+    # Initialize the keyring (generates master key, sets up trust db)
+    ok, out = run_cmd(["pacman-key", "--init"], state, "Initialize pacman keyring")
+    logs.append(out)
+    if not ok:
+        return False, f"pacman-key --init failed:\n{out}"
+
+    # Populate with the official Arch Linux keys
+    ok, out = run_cmd(
+        ["pacman-key", "--populate", "archlinux"],
+        state, "Populate Arch Linux keyring"
+    )
+    logs.append(out)
+    if not ok:
+        return False, f"pacman-key --populate failed:\n{out}"
+
+    # Refresh the package databases so signatures are current
+    ok, out = run_cmd(
+        ["pacman", "-Sy", "--noconfirm"],
+        state, "Refresh package databases"
+    )
+    logs.append(out)
+    if not ok:
+        # Non-fatal — pacstrap will try again
+        state.add_log(f"[warn] pacman -Sy failed (non-fatal): {out}")
+
+    return True, "\n".join(logs)
+
+
+# Optimised pacman.conf written into the new system before pacstrap runs.
+# Increases ParallelDownloads for significantly faster package installs.
+_PACMAN_CONF = """
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+Color
+CheckSpace
+VerbosePkgLists
+ParallelDownloads = 10
+
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+""".strip()
+
+
+def _write_optimized_pacman_conf(state) -> None:
+    """Write an optimized pacman.conf to the new system for faster pacstrap."""
+    if state.dry_run:
+        return
+    try:
+        os.makedirs(f"{MOUNTPOINT}/etc", exist_ok=True)
+        with open(f"{MOUNTPOINT}/etc/pacman.conf", "w") as f:
+            f.write(_PACMAN_CONF + "\n")
+        state.add_log("Wrote optimized pacman.conf (ParallelDownloads=10)")
+    except OSError as e:
+        state.add_log(f"[warn] Could not write pacman.conf: {e}")
+
+
 def _step_pacstrap(state, ticker_cb=None) -> tuple:
     """Run pacstrap to install the base system with live streaming output."""
     packages = build_package_list(state)
 
+    # Write an optimized pacman.conf before pacstrap so parallel downloads
+    # take effect. pacstrap -C uses it directly; without -C it copies the
+    # live system conf which may have a lower ParallelDownloads setting.
+    _write_optimized_pacman_conf(state)
+
+    # Also copy the live system's ranked mirrorlist so pacstrap uses the
+    # same fast mirrors without having to re-rank
+    if not state.dry_run:
+        try:
+            live_ml = "/etc/pacman.d/mirrorlist"
+            target_ml = f"{MOUNTPOINT}/etc/pacman.d/mirrorlist"
+            os.makedirs(f"{MOUNTPOINT}/etc/pacman.d", exist_ok=True)
+            # Only use live mirrorlist if it has Server entries
+            with open(live_ml) as f:
+                live_content = f.read()
+            if "Server = " in live_content and not state.mirrorlist:
+                with open(target_ml, "w") as f:
+                    f.write(live_content)
+                state.add_log("Copied live system mirrorlist to new system")
+        except OSError:
+            pass  # mirrorlist was already written by _step_mirrorlist
+
     return run_cmd_streaming(
-        ["pacstrap", "-K", MOUNTPOINT] + packages,
+        ["pacstrap", "-K", "-C", f"{MOUNTPOINT}/etc/pacman.conf",
+         MOUNTPOINT] + packages,
         state,
         description=f"pacstrap {len(packages)} packages",
         ticker_cb=ticker_cb,
-        timeout=1800,  # 30 min — large installs take time
+        timeout=3600,  # 60 min — large installs on slow connections
     )
 
 
@@ -556,6 +675,11 @@ def build_package_list(state) -> list:
 
     packages.extend(state.extra_packages)
 
+    # Plymouth — graphical boot splash with LUKS password dialog.
+    # The arch-installer theme provides the Fedora-style passphrase prompt.
+    if "plymouth" not in packages:
+        packages.append("plymouth")
+
     if state.root_filesystem == "btrfs":
         packages.append("btrfs-progs")
     elif state.root_filesystem == "xfs":
@@ -565,6 +689,23 @@ def build_package_list(state) -> list:
 
     if state.luks_passphrase:
         packages.append("cryptsetup")
+
+    # Bootloader packages — must be installed into the new system by pacstrap
+    bl = state.bootloader
+    if bl == "grub":
+        packages.extend(["grub", "efibootmgr", "os-prober"])
+        if state.boot_mode == "uefi":
+            packages.append("dosfstools")
+    elif bl == "systemd-boot":
+        packages.append("efibootmgr")
+    elif bl == "refind":
+        packages.append("refind")
+    elif bl in ("efistub", "uki"):
+        packages.append("efibootmgr")
+
+    # Initramfs generator — dracut is not in base, must be explicitly installed
+    if getattr(state, "initramfs_generator", "mkinitcpio") == "dracut":
+        packages.append("dracut")
 
     seen = set()
     result = []

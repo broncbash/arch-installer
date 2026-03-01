@@ -52,7 +52,7 @@ DE_OPTIONS = [
         "desc":     "Polished, modern desktop focused on simplicity. "
                     "Wayland by default. Great for users coming from macOS "
                     "or wanting a clean, touch-friendly experience.",
-        "packages": ["gnome", "gnome-extra"],
+        "packages": ["gnome", "gnome-extra", "gdm"],
         "dm":       "gdm",
     },
     {
@@ -63,7 +63,7 @@ DE_OPTIONS = [
         "desc":     "Feature-rich, highly customisable desktop. Supports "
                     "both Wayland and X11. Great for users who want full "
                     "control over every aspect of their environment.",
-        "packages": ["plasma", "kde-applications"],
+        "packages": ["plasma", "kde-applications", "sddm"],
         "dm":       "sddm",
     },
     {
@@ -99,7 +99,7 @@ DE_OPTIONS = [
                     "and eye candy. Highly customisable via config file. "
                     "Popular for ricing. Requires a capable GPU.",
         "packages": ["hyprland", "waybar", "wofi", "foot",
-                     "mako", "hyprpaper", "xdg-desktop-portal-hyprland"],
+                     "mako", "hyprpaper", "xdg-desktop-portal-hyprland", "sddm"],
         "dm":       "sddm",
     },
     {
@@ -123,7 +123,8 @@ DE_OPTIONS = [
                     "Extremely stable, well-documented, huge community. "
                     "Config file driven. Great starting point for tiling WMs.",
         "packages": ["i3-wm", "i3status", "i3lock", "dmenu",
-                     "xterm", "picom", "feh", "dunst"],
+                     "xterm", "picom", "feh", "dunst",
+                     "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
     },
     {
@@ -135,7 +136,8 @@ DE_OPTIONS = [
                     "tree. Controlled entirely via sxhkd hotkey daemon and "
                     "shell scripts. Extremely flexible, steeper learning curve.",
         "packages": ["bspwm", "sxhkd", "dmenu", "xterm",
-                     "picom", "feh", "dunst", "polybar"],
+                     "picom", "feh", "dunst", "polybar",
+                     "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
     },
 ]
@@ -228,9 +230,36 @@ EXTRA_GROUPS = [
         "heading": "Fonts & Themes",
         "items": [
             ("noto-fonts noto-fonts-emoji",
-                                         "Noto Fonts",       "Wide Unicode + emoji coverage"),
-            ("ttf-jetbrains-mono",       "JetBrains Mono",   "Developer monospace font"),
-            ("ttf-fira-code",            "Fira Code",        "Ligature monospace font"),
+                                         "Noto Fonts",          "Wide Unicode + emoji coverage"),
+            ("ttf-jetbrains-mono",       "JetBrains Mono",      "Developer monospace font"),
+            ("ttf-fira-code",            "Fira Code",           "Ligature monospace font"),
+            ("ttf-hack-nerd-font",       "Hack Nerd Font",      "Nerd Font patched with icons"),
+            ("ttf-firacode-nerd",        "FiraCode Nerd Font",  "Nerd Font patched Fira Code"),
+            ("ttf-cascadia-code-nerd",   "Cascadia Nerd Font",  "Microsoft Cascadia with icons"),
+            ("nerd-fonts",               "All Nerd Fonts",      "Full nerd-fonts package group (large — ~3GB)"),
+        ],
+    },
+    {
+        "heading": "GTK Themes",
+        "items": [
+            ("arc-gtk-theme",            "Arc",                 "Flat theme — dark, light, darker variants"),
+            ("arc-gtk-theme arc-icon-theme",
+                                         "Arc + Arc Icons",     "Arc theme bundled with matching icons"),
+            ("materia-gtk-theme",        "Materia",             "Material Design inspired dark/light theme"),
+            ("adw-gtk3",                 "adw-gtk3",            "Libadwaita style for GTK3 apps"),
+            ("catppuccin-gtk-theme-mocha",
+                                         "Catppuccin Mocha",    "Soothing pastel dark theme"),
+        ],
+    },
+    {
+        "heading": "Icon Themes",
+        "items": [
+            ("papirus-icon-theme",       "Papirus",             "Popular flat icon theme — light & dark variants"),
+            ("papirus-icon-theme papirus-folders",
+                                         "Papirus + Folders",   "Papirus with coloured folder variants"),
+            ("numix-icon-theme-circle",  "Numix Circle",        "Round icon style"),
+            ("tela-icon-theme",          "Tela",                "Flat sharp icons — multiple colour variants"),
+            ("la-capitaine-icon-theme",  "La Capitaine",        "macOS-inspired icon set"),
         ],
     },
 ]
@@ -301,7 +330,9 @@ class PackageScreen(BaseScreen):
     # ── Content ───────────────────────────────────────────────────────────────
 
     def build_content(self) -> Gtk.Widget:
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        # Note: base_screen already wraps build_content() in a ScrolledWindow,
+        # so we return a plain Box here to avoid double-nesting.
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
 
         # ── DE picker ─────────────────────────────────────────────────────────
         root.pack_start(self._build_de_section(), False, False, 0)
@@ -338,12 +369,13 @@ class PackageScreen(BaseScreen):
 
         # DE cards in a wrapping flow (handles any number of options)
         cards_box = Gtk.FlowBox()
-        cards_box.set_min_children_per_line(3)
-        cards_box.set_max_children_per_line(5)
+        cards_box.set_min_children_per_line(2)
+        cards_box.set_max_children_per_line(3)
         cards_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        cards_box.set_homogeneous(True)
+        cards_box.set_homogeneous(False)
         cards_box.set_row_spacing(6)
         cards_box.set_column_spacing(6)
+        cards_box.set_halign(Gtk.Align.START)
 
         for de in DE_OPTIONS:
             card = self._make_de_card(de)
@@ -370,13 +402,15 @@ class PackageScreen(BaseScreen):
     def _make_de_card(self, de: dict) -> Gtk.Widget:
         eb = Gtk.EventBox()
         eb.get_style_context().add_class("level-card")
+        # Fixed size — prevents FlowBox from stretching cards to fill row width
+        eb.set_size_request(150, 95)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
         # Top row: checkbox left-aligned
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        top_row.set_margin_start(6)
-        top_row.set_margin_top(6)
+        top_row.set_margin_start(4)
+        top_row.set_margin_top(4)
 
         chk = Gtk.CheckButton()
         chk.set_active(de["id"] in self._selected_des)
@@ -388,14 +422,15 @@ class PackageScreen(BaseScreen):
 
         outer.pack_start(top_row, False, False, 0)
 
-        # Main content
-        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        inner.set_margin_start(10)
-        inner.set_margin_end(10)
-        inner.set_margin_top(2)
-        inner.set_margin_bottom(10)
+        # Main content — compact
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        inner.set_margin_start(6)
+        inner.set_margin_end(6)
+        inner.set_margin_top(0)
+        inner.set_margin_bottom(6)
 
         icon = Gtk.Label(label=de["icon"])
+        icon.get_style_context().add_class("de-card-icon")
         icon.set_xalign(0.5)
         inner.pack_start(icon, False, False, 0)
 
@@ -408,6 +443,7 @@ class PackageScreen(BaseScreen):
         sub.get_style_context().add_class("card-desc")
         sub.set_xalign(0.5)
         sub.set_line_wrap(True)
+        sub.set_max_width_chars(18)
         inner.pack_start(sub, False, False, 0)
 
         outer.pack_start(inner, False, False, 0)

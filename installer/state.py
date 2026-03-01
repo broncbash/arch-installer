@@ -71,7 +71,7 @@ class InstallState:
     extra_packages: List[str] = field(default_factory=list)
     desktop_environment: str = ""    # 'gnome'|'kde'|'xfce'|'sway'|'' etc.
     display_manager: str = ""        # 'gdm'|'sddm'|'lightdm'|'' etc.
-    network_manager: str = "NetworkManager"
+    network_manager: str = "networkmanager"
 
     # ── System config ─────────────────────────────────────────────────────────
     hostname: str = "archlinux"

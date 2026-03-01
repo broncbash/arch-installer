@@ -13,8 +13,9 @@
 ---
 
 > ⚠️ **This project is in active development and not yet ready for use on real hardware.**
-> The installer boots and runs from a custom ISO in a VM. End-to-end install testing
-> is in progress — base system install nearly complete.
+> End-to-end VM installs are working. LUKS encryption, Plymouth boot splash, and
+> post-install configuration are functional. A small number of known issues remain
+> (see below).
 
 ---
 
@@ -28,29 +29,29 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Experience levels** — Beginner, Intermediate, and Advanced modes that adjust
   available options and explanations on every screen
 - **Contextual hints** — every screen has an info panel tailored to your level
-- **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser,
-  accessible via a collapsible "📖 Arch Wiki" expander in the hints panel
-- **Full partitioning** — MBR/GPT, auto/manual layouts, LUKS2, Btrfs subvolumes
+- **Integrated Arch Wiki viewer** — wiki links open an in-app WebKit2GTK browser
+  via a collapsible expander in the hints panel
+- **Full partitioning** — MBR/GPT, auto/manual layouts, LUKS2 encryption, Btrfs subvolumes
 - **Mirror selection** — reflector with checkbox country picker and live log
-- **Package selection** — 9 DE/WM options with multi-select (tick as many as you
-  want), curated extras checklist, and free-form package entry
-- **Timezone** — searchable list with live clock preview, auto-detected default
-- **System config** — hostname validation, root password with strength indicator,
-  NTP toggle, and initramfs generator choice (mkinitcpio / dracut) for Advanced users
+- **Package selection** — 9 DE/WM options with multi-select, curated extras checklist,
+  and free-form package entry
+- **Timezone** — searchable list with live clock preview
+- **System config** — hostname, root password with strength indicator, NTP toggle,
+  initramfs generator choice (mkinitcpio / dracut) for Advanced users
 - **User setup** — username, password, sudo, shell picker, group checkboxes
-- **Review & Confirm** — full summary of every selection before anything touches
-  disk; ✏ Edit buttons jump directly back to any stage and return automatically
-- **Base system install** — pacstrap with live streaming status ticker, per-step
-  progress, retry on error; Begin button fixed at bottom outside scroll area
-- **Bootloader selection** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; options
-  filtered by experience level with live card switching
-- **Complete / Reboot** — post-install chroot config: locale, keyboard, timezone,
-  initramfs (mkinitcpio or dracut), bootloader install, service enablement,
-  unmount, reboot
-- **Dry-run toggle** — toggle switch on the welcome screen; defaults to safe
-  dry-run mode with a live banner that hides when disabled
-- **Custom bootable ISO** — archiso profile boots directly into the GTK installer;
-  Plymouth boot splash with animated logo (Y-axis flip + pulsing cyan glow)
+- **Review & Confirm** — full summary of every selection before anything touches disk;
+  ✏ Edit buttons jump directly back to any stage and return automatically
+- **Base system install** — pacstrap with live streaming status, per-step progress,
+  retry on error; optimized pacman.conf (ParallelDownloads=10) for faster downloads
+- **LUKS encryption** — full dm-crypt/LUKS2 with correct initramfs hooks,
+  cryptdevice kernel params, GRUB integration, and a keyfile to avoid double prompts
+- **Bootloader** — GRUB, systemd-boot, rEFInd, EFIStub, UKI; filtered by experience level
+- **Post-install config** — locale, keyboard, timezone, initramfs, bootloader,
+  service enablement, unmount, reboot — all automated
+- **Plymouth boot splash** — animated logo (Y-axis flip + pulsing cyan glow) on ISO boot;
+  styled LUKS passphrase dialog on the installed system
+- **Dry-run mode** — toggle on the welcome screen, enabled by default; all disk
+  operations are logged but never executed
 
 ---
 
@@ -75,33 +76,46 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 14 | Bootloader | ✅ Complete |
 | 15 | Complete / Reboot | ✅ Complete |
 
-All 16 stages complete. End-to-end VM install testing in progress. 🚧
+All 16 stages complete. VM end-to-end testing in progress. 🚧
+
+---
+
+## Known Issues
+
+- **Package selection screen width** — the DE/WM card container stretches to fill
+  the full content area, partially obscuring the hints panel on smaller displays
+- **LUKS pre-menu passphrase prompt** — when using Beginner auto-partitioning with
+  LUKS, GRUB asks for the passphrase before showing the boot menu because `/boot`
+  lives inside the encrypted root partition. A separate `/boot` partition in the
+  auto layout will fix this in the next session.
 
 ---
 
 ## Custom ISO
 
-The project includes a full archiso profile that builds a bootable ISO with the
-GTK installer launching automatically on boot — no desktop environment, no login
-prompt.
+Includes a full archiso profile that builds a bootable ISO with the GTK installer
+launching automatically on boot.
 
-### Build the ISO
+### Build
 
 ```bash
-sudo ./build.sh
+sudo mkarchiso -v \
+  -w /tmp/archiso-work \
+  -o /path/to/arch-installer/iso/out \
+  /path/to/arch-installer/iso
 ```
 
-`build.sh` automatically syncs the installer source into the ISO airootfs, cleans
-previous build artifacts, and runs `mkarchiso`. The ISO is output to `/tmp/archiso-out/`.
+`build.sh` syncs the installer source into the ISO airootfs automatically before building.
 
-### What the ISO does on boot
+### Boot sequence
 
-1. Plymouth displays the animated boot splash (spinning logo + pulsing glow)
+1. Plymouth displays the animated boot splash (spinning Arch logo + pulsing cyan glow)
 2. systemd starts `arch-installer.service` after NetworkManager is online
 3. Service runs `/usr/local/bin/arch-installer-session` as root on tty1
-4. Session script quits Plymouth, starts a minimal Xorg server
+4. Session script starts a minimal Xorg server
 5. GTK3 installer launches fullscreen automatically
-6. User goes through all stages and installs Arch Linux
+6. User installs Arch Linux through the GUI
+7. On reboot: Plymouth shows a styled passphrase dialog if LUKS was enabled
 
 ### Boot entries
 
@@ -114,12 +128,8 @@ previous build artifacts, and runs `mkarchiso`. The ISO is output to `/tmp/archi
 
 ```bash
 sudo pacman -S python python-gobject gtk3 webkit2gtk parted \
-               reflector sgdisk cryptsetup btrfs-progs dracut
+               reflector sgdisk cryptsetup btrfs-progs
 ```
-
-> `dracut` is optional — only needed if you select it as your initramfs generator
-> on the System Config screen (Advanced mode). mkinitcpio is installed as part of
-> the base Arch system automatically.
 
 ---
 
@@ -131,45 +141,29 @@ cd arch-installer
 sudo ./arch-installer
 ```
 
-The installer must be run as root. It will exit with a clear error message if
-launched without `sudo`. On a live ISO, root is already the active user so no
-`sudo` is needed.
+Must be run as root. On the live ISO, root is already the active user.
 
 ---
 
 ## Safety: Dry-Run Mode
 
-The welcome screen has a **Dry Run Mode toggle switch** — enabled by default.
+The welcome screen has a **Dry Run Mode toggle** — enabled by default.
 
-- When **on**: a banner is shown at the top of every screen, all disk operations
-  are logged but never executed, the install screen shows "🧪 Begin Dry Run"
-- When **off**: a red warning box appears on the welcome screen, the banner
-  disappears, and real disk operations will be performed
-
-The toggle updates `state.dry_run` live — no need to edit any source files.
+- **On**: banner shown at top of every screen, disk operations logged but not executed
+- **Off**: red warning shown, real disk operations will be performed
 
 ---
 
 ## Design Notes
 
-**All choices come before the install.** Packages, timezone, hostname, users —
-everything is configured first on the Review & Confirm screen. Pacstrap runs
-after confirmation with the complete picture.
+**All choices come before the install.** Everything is configured on the Review &
+Confirm screen. Pacstrap runs after confirmation with the complete picture.
 
-**Experience levels** control what's visible on every screen:
-- Beginner sees only the safest options with plain-language explanations
-- Intermediate unlocks more choices with brief technical context
-- Advanced exposes everything with full technical detail
+**Experience levels** control what's visible on every screen — Beginner sees only
+safe options with plain-language explanations; Advanced exposes everything.
 
-**Arch Wiki links** are available on every screen via a collapsible expander
-at the bottom of the hints panel.
-
-**Review & Confirm** is a read-only summary of every selection. Each section
-has an ✏ Edit button that jumps directly back to that stage and returns
-automatically after editing.
-
-**Live install status ticker** — during pacstrap, a spinner and status line show
-the current package being downloaded or installed in real time.
+**Arch Wiki links** are available on every screen via a collapsible expander at
+the bottom of the hints panel.
 
 ---
 

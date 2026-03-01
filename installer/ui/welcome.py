@@ -1,9 +1,12 @@
 """
 Stage 0 — Welcome / Experience Level screen
 """
+import os
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib, Pango
+from gi.repository import Gtk, GLib, GdkPixbuf, Pango
+
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets")
 
 WELCOME_INFO = {
     "beginner": (
@@ -40,10 +43,11 @@ LEVEL_LABELS = {
 class WelcomeScreen(Gtk.Box):
     """Stage 0 — Welcome and experience-level selection."""
 
-    def __init__(self, state, on_next=None, on_back=None):
+    def __init__(self, state, on_next=None, on_back=None, on_dry_run_changed=None):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.state = state
         self.on_next = on_next
+        self._on_dry_run_changed = on_dry_run_changed
         self._selected_level = getattr(state, "experience_level", None) or "beginner"
         self._next_called = False
         self._build_ui()
@@ -61,7 +65,12 @@ class WelcomeScreen(Gtk.Box):
         header.set_margin_start(32)
         header.set_margin_end(32)
 
-        logo_label = Gtk.Label(label="󰣇")
+        icon_path = os.path.join(ASSETS_DIR, "installer.png")
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(icon_path, 64, 64)
+            logo_label = Gtk.Image.new_from_pixbuf(pixbuf)
+        except Exception:
+            logo_label = Gtk.Label(label="🐧")
         logo_label.get_style_context().add_class("welcome-logo")
 
         title = Gtk.Label(label="Arch Linux Installer")
@@ -241,6 +250,8 @@ class WelcomeScreen(Gtk.Box):
     def _on_dryrun_toggled(self, switch, _param):
         dry = switch.get_active()
         self.state.dry_run = dry
+        if self._on_dry_run_changed:
+            self._on_dry_run_changed()
         ctx = self._dryrun_sublabel.get_style_context()
         if dry:
             self._dryrun_sublabel.set_text("Enabled — nothing will be written to disk")

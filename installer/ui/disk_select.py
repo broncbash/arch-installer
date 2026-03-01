@@ -181,7 +181,47 @@ class DiskSelectScreen(BaseScreen):
         self._summary_frame.add(summary_box)
         root.pack_start(self._summary_frame, False, False, 0)
 
+        # ── Partition table type (Advanced + BIOS only) ───────────────────────
+        self._pt_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._pt_row.get_style_context().add_class("card")
+        self._pt_row.set_margin_top(4)
+        self._pt_row.set_no_show_all(True)
+
+        pt_label = Gtk.Label(label="Partition table:")
+        pt_label.get_style_context().add_class("section-heading")
+        pt_label.set_margin_start(14)
+        pt_label.set_margin_top(10)
+        pt_label.set_margin_bottom(10)
+        self._pt_row.pack_start(pt_label, False, False, 0)
+
+        self._pt_gpt = Gtk.RadioButton.new_with_label(None, "GPT  (recommended)")
+        self._pt_mbr = Gtk.RadioButton.new_with_label_from_widget(self._pt_gpt, "MBR  (legacy)")
+        self._pt_gpt.set_margin_top(10)
+        self._pt_gpt.set_margin_bottom(10)
+        self._pt_mbr.set_margin_top(10)
+        self._pt_mbr.set_margin_bottom(10)
+        # Default to current state
+        if self.state.partition_table == "mbr":
+            self._pt_mbr.set_active(True)
+        else:
+            self._pt_gpt.set_active(True)
+        self._pt_gpt.connect("toggled", self._on_pt_changed)
+        self._pt_row.pack_start(self._pt_gpt, False, False, 0)
+        self._pt_row.pack_start(self._pt_mbr, False, False, 0)
+
+        root.pack_start(self._pt_row, False, False, 0)
+
+        # Apply initial visibility
+        GLib.idle_add(self._apply_visibility)
+
         return root
+
+    def _apply_visibility(self):
+        self.on_experience_changed()
+        return False
+
+    def _on_pt_changed(self, _btn):
+        self.state.partition_table = "gpt" if self._pt_gpt.get_active() else "mbr"
 
     # ── Boot mode banner ──────────────────────────────────────────────────────
 
@@ -219,6 +259,19 @@ class DiskSelectScreen(BaseScreen):
 
         box.pack_start(text_box, True, True, 0)
         return box
+
+    def on_experience_changed(self):
+        """Show/hide advanced options and rebuild disk cards when experience level changes."""
+        level = self.state.experience_level
+        # Show partition table selector only in Advanced + BIOS mode
+        if hasattr(self, '_pt_row'):
+            if level == 'advanced' and self.state.boot_mode == 'bios':
+                self._pt_row.show()
+            else:
+                self._pt_row.hide()
+        # Rebuild disk cards to show more/less technical detail
+        if hasattr(self, '_disks') and self._disks:
+            self._rebuild_disk_cards()
 
     # ── Async disk loading ────────────────────────────────────────────────────
 
@@ -324,14 +377,48 @@ class DiskSelectScreen(BaseScreen):
         title_lbl.set_xalign(0)
         name_box.pack_start(title_lbl, False, False, 0)
 
-        # Subtitle: type + size
+        # Subtitle: type + size (+ technical details for Intermediate/Advanced)
+        level = self.state.experience_level
         sub_text = f"{disk['disk_type']}  •  {disk['size_human']}"
         if disk["removable"]:
-            sub_text += "  •  Removable"
+            sub_text += "  •  ⚠ Removable"
         sub_lbl = Gtk.Label(label=sub_text)
         sub_lbl.get_style_context().add_class("detail-value")
         sub_lbl.set_xalign(0)
         name_box.pack_start(sub_lbl, False, False, 0)
+
+        if level in ("intermediate", "advanced"):
+            # Extra technical row: transport + disk type details
+            tech_parts = []
+            transport = disk.get("transport", "")
+            if transport:
+                tech_parts.append(f"Transport: {transport.upper()}")
+            disk_type = disk.get("disk_type", "")
+            if disk_type and disk_type not in sub_text:
+                tech_parts.append(disk_type)
+            if disk.get("has_data"):
+                tech_parts.append(f"{len(disk['partitions'])} existing partition(s)")
+            if tech_parts:
+                tech_lbl = Gtk.Label(label="  •  ".join(tech_parts))
+                tech_lbl.get_style_context().add_class("detail-key")
+                tech_lbl.set_xalign(0)
+                name_box.pack_start(tech_lbl, False, False, 0)
+
+        if level == "advanced" and disk.get("partitions"):
+            # Show partition details inline on the card
+            for part in disk["partitions"][:3]:
+                fs  = part.get("fstype") or "unknown"
+                mp  = f" → {part['mountpoint']}" if part.get("mountpoint") else ""
+                sz  = part.get("size_human", "")
+                p_lbl = Gtk.Label(label=f"  {part['path']}  {sz}  {fs}{mp}")
+                p_lbl.get_style_context().add_class("detail-value")
+                p_lbl.set_xalign(0)
+                name_box.pack_start(p_lbl, False, False, 0)
+            if len(disk["partitions"]) > 3:
+                more_lbl = Gtk.Label(label=f"  … +{len(disk['partitions'])-3} more")
+                more_lbl.get_style_context().add_class("detail-value")
+                more_lbl.set_xalign(0)
+                name_box.pack_start(more_lbl, False, False, 0)
 
         top_row.pack_start(name_box, True, True, 0)
         outer.pack_start(top_row, False, False, 0)
@@ -462,7 +549,7 @@ def _disk_icon(disk_type: str) -> str:
     return {
         "NVMe SSD": "⚡",
         "SSD":      "💾",
-        "HDD":      "🖴",
+        "HDD":      "💿",
         "USB":      "🔌",
         "Virtual":  "🖥️",
     }.get(disk_type, "💾")

@@ -10,11 +10,115 @@ Provides:
   - Consistent styling hooks
 """
 
+import os
+import math
+
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Pango, GLib
+gi.require_version('Gdk', '3.0')
+from gi.repository import Gtk, Gdk, Pango, GLib, GdkPixbuf
+
+try:
+    import cairo
+except ImportError:
+    cairo = None
 
 from installer.state import InstallState
+
+# ── Asset paths ───────────────────────────────────────────────────────────────
+_BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR   = os.path.join(_BASE_DIR, "..", "assets")
+
+# Arch logo: live ISO installed path first, then repo dev path, then installer icon
+_ISO_LOGO_PATH  = "/usr/share/plymouth/themes/arch-installer/logo.png"
+ARCH_LOGO_PATH  = os.path.join(
+    _BASE_DIR, "..", "..", "iso", "airootfs",
+    "usr", "share", "plymouth", "themes", "arch-installer", "logo.png"
+)
+
+
+
+class _ArchSpinLogo(Gtk.DrawingArea):
+    """
+    A small DrawingArea that renders the Arch Linux logo and animates
+    a Y-axis flip by scaling X: 1 → 0 → -1 → 0 → 1 (same trick as Plymouth).
+    Falls back to a static 'A' label if the logo PNG cannot be loaded.
+    """
+    _PERIOD_MS  = 2000   # full flip cycle in milliseconds
+    _FPS        = 60
+
+    def __init__(self, size: int = 24):
+        super().__init__()
+        self._size   = size
+        self._pixbuf = None
+        self._angle  = 0.0   # 0..2π drives the x-scale cosine
+        self._timer  = None
+        self.set_size_request(size, size)
+        self._load_pixbuf()
+        self.connect("draw", self._on_draw)
+        self.connect("map",   self._start_animation)
+        self.connect("unmap", self._stop_animation)
+
+    def _load_pixbuf(self):
+        for candidate in [
+            _ISO_LOGO_PATH,
+            ARCH_LOGO_PATH,
+            os.path.join(ASSETS_DIR, "installer.png"),
+        ]:
+            if os.path.exists(candidate):
+                try:
+                    self._pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
+                        candidate, self._size, self._size
+                    )
+                    return
+                except Exception:
+                    pass
+
+    def _start_animation(self, *_):
+        if self._timer is None:
+            interval = max(1, 1000 // self._FPS)
+            self._timer = GLib.timeout_add(interval, self._tick)
+
+    def _stop_animation(self, *_):
+        if self._timer is not None:
+            GLib.source_remove(self._timer)
+            self._timer = None
+
+    def _tick(self):
+        self._angle = (self._angle + (2 * math.pi * (1000 / self._FPS) / self._PERIOD_MS)) % (2 * math.pi)
+        self.queue_draw()
+        return True   # keep firing
+
+    def _on_draw(self, _widget, cr):
+        s = self._size
+        cx = s / 2
+        cy = s / 2
+
+        # Y-axis flip: scale X by cos(angle), keep Y at 1
+        x_scale = math.cos(self._angle)
+
+        cr.save()
+        cr.translate(cx, cy)
+        cr.scale(x_scale, 1.0)
+        cr.translate(-cx, -cy)
+
+        if self._pixbuf:
+            from gi.repository import Gdk as _Gdk
+            surface = _Gdk.cairo_surface_create_from_pixbuf(self._pixbuf, 1, None)
+            cr.set_source_surface(surface, 0, 0)
+            cr.paint()
+        else:
+            # Fallback: draw cyan "A"
+            cr.set_source_rgb(0.33, 0.73, 0.87)
+            cr.select_font_face("Sans", 0, 1)  # FONT_SLANT_NORMAL=0, FONT_WEIGHT_BOLD=1
+            cr.set_font_size(s * 0.8)
+            ext = cr.text_extents("A")
+            cr.move_to(cx - ext.width / 2 - ext.x_bearing,
+                       cy - ext.height / 2 - ext.y_bearing)
+            cr.show_text("A")
+
+        cr.restore()
+        return False
 
 
 class BaseScreen(Gtk.Box):
@@ -122,7 +226,7 @@ class BaseScreen(Gtk.Box):
         # ── Info panel (fixed width, right side) ─────────────────────────────
         info_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         info_panel.get_style_context().add_class("info-panel")
-        info_panel.set_size_request(280, -1)
+        info_panel.set_size_request(240, -1)
 
         # "Hints & Info" header
         info_header = Gtk.Label(label="💡  Hints & Info")
@@ -168,10 +272,20 @@ class BaseScreen(Gtk.Box):
             expander.set_margin_top(8)
             expander.set_margin_bottom(8)
 
-            # Custom label widget so we can style it like the old frame title
-            exp_label = Gtk.Label(label="📖  Arch Wiki")
-            exp_label.get_style_context().add_class("wiki-frame-title")
-            expander.set_label_widget(exp_label)
+            # Custom label: spinning Arch logo + text
+            exp_label_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            exp_label_box.set_valign(Gtk.Align.CENTER)
+
+            # Spinning Arch logo DrawingArea
+            spin_area = _ArchSpinLogo(size=40)
+            exp_label_box.pack_start(spin_area, False, False, 0)
+
+            exp_label_text = Gtk.Label()
+            exp_label_text.set_markup('<span size="large" weight="bold">Arch Wiki</span>')
+            exp_label_text.get_style_context().add_class("wiki-frame-title")
+            exp_label_box.pack_start(exp_label_text, False, False, 0)
+            exp_label_box.show_all()
+            expander.set_label_widget(exp_label_box)
 
             wiki_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
             wiki_box.set_margin_top(8)

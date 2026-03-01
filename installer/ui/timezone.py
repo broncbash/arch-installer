@@ -189,6 +189,34 @@ def _guess_timezone(locale: str) -> str:
     return "UTC"
 
 
+def _detect_timezone_from_ip() -> str:
+    """
+    Try to detect timezone via IP geolocation using multiple free services.
+    Falls back to None if network is unavailable or all services fail.
+    Runs quickly — services respond in < 1s on a live network.
+    """
+    import urllib.request
+    import json
+
+    services = [
+        # Returns JSON with 'timezone' field
+        ("http://ip-api.com/json/?fields=timezone", lambda d: d.get("timezone")),
+        ("https://ipapi.co/json/",                  lambda d: d.get("timezone")),
+        ("https://worldtimeapi.org/api/ip",          lambda d: d.get("timezone")),
+    ]
+    for url, extractor in services:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "arch-installer/1.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+                tz = extractor(data)
+                if tz and "/" in tz:
+                    return tz
+        except Exception:
+            continue
+    return None
+
+
 class TimezoneScreen(BaseScreen):
     """Stage 10 — Timezone Selection."""
 
@@ -206,7 +234,10 @@ class TimezoneScreen(BaseScreen):
         if state.timezone and state.timezone != "UTC":
             self._selected_tz = state.timezone
         else:
-            self._selected_tz = _guess_timezone(state.locale or "en_US.UTF-8")
+            # Try IP geolocation first (network is up by this stage),
+            # fall back to locale-based guess
+            detected = _detect_timezone_from_ip()
+            self._selected_tz = detected or _guess_timezone(state.locale or "en_US.UTF-8")
 
         self._all_timezones = _load_timezones()
         self._clock_timer   = None   # GLib timer id

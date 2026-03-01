@@ -44,6 +44,8 @@ class InstallScreen(BaseScreen):
         self._failed_step    = None
         self._install_thread = None
         self._ticker_source  = None
+        self._pulse_source   = None
+        self._pulse_phase    = 0
         super().__init__(state=state, on_next=on_next, on_back=on_back)
         self.set_next_enabled(False)
         GLib.idle_add(self._apply_phase)
@@ -91,43 +93,39 @@ class InstallScreen(BaseScreen):
         self._stack.add_named(self._build_install_page(), "install")
         self._outer_box.pack_start(self._stack, True, True, 0)
 
-        self._begin_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self._begin_row.set_margin_top(10)
-        self._begin_row.set_margin_bottom(4)
-        self._begin_row.set_margin_start(4)
-        self._begin_row.set_margin_end(4)
-
-        self._begin_btn = Gtk.Button(
-            label="🧪  Begin Dry Run" if self.state.dry_run else "⚠  Begin Installation"
-        )
-        self._begin_btn.get_style_context().add_class("action-button")
-        self._begin_btn.set_hexpand(True)
-        self._begin_btn.connect("clicked", self._on_begin_clicked)
-        self._begin_row.pack_start(self._begin_btn, True, True, 0)
-        self._outer_box.pack_start(self._begin_row, False, False, 0)
-
         return self._outer_box
 
     def _build_summary_page(self) -> Gtk.Widget:
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_start(4)
         box.set_margin_end(4)
         box.set_margin_top(4)
         box.set_margin_bottom(4)
 
-        steps_frame = Gtk.Frame()
-        steps_frame.get_style_context().add_class("card")
+        # ── Begin button — always visible at top ────────────────────────────
+        self._begin_btn = Gtk.Button(
+            label="🧪  Begin Dry Run" if self.state.dry_run else "🚀  Begin Installation"
+        )
+        self._begin_btn.get_style_context().add_class("begin-button")
+        self._begin_btn.set_hexpand(True)
+        self._begin_btn.set_margin_top(4)
+        self._begin_btn.set_margin_bottom(2)
+        self._begin_btn.connect("clicked", self._on_begin_clicked)
+        box.pack_start(self._begin_btn, False, False, 0)
+        self._start_begin_pulse()
+
+        # ── Steps — collapsed expander so Begin button is immediately visible ─
+        steps_exp = Gtk.Expander()
+        steps_exp.get_style_context().add_class("card")
+        steps_exp.set_label("  What will happen  ▾")
+        steps_exp.set_expanded(False)
         steps_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         steps_box.set_margin_start(14)
         steps_box.set_margin_end(14)
-        steps_box.set_margin_top(10)
+        steps_box.set_margin_top(6)
         steps_box.set_margin_bottom(10)
-        steps_heading = Gtk.Label(label="What will happen:")
-        steps_heading.get_style_context().add_class("section-heading")
-        steps_heading.set_xalign(0)
-        steps_box.pack_start(steps_heading, False, False, 0)
         for step_id, step_label in INSTALL_STEPS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             icon = Gtk.Label(label="◦")
@@ -138,8 +136,8 @@ class InstallScreen(BaseScreen):
             lbl.set_xalign(0)
             row.pack_start(lbl, True, True, 0)
             steps_box.pack_start(row, False, False, 0)
-        steps_frame.add(steps_box)
-        box.pack_start(steps_frame, False, False, 0)
+        steps_exp.add(steps_box)
+        box.pack_start(steps_exp, False, False, 0)
 
         cfg_frame = Gtk.Frame()
         cfg_frame.get_style_context().add_class("card")
@@ -328,12 +326,10 @@ class InstallScreen(BaseScreen):
     def _apply_phase(self):
         if self._phase == "summary":
             self._stack.set_visible_child_name("summary")
-            self._begin_row.show()
             self.set_back_enabled(True)
             self.set_next_enabled(False)
         elif self._phase in ("installing", "done", "error"):
             self._stack.set_visible_child_name("install")
-            self._begin_row.hide()
             self.set_back_enabled(False)
             self.set_next_enabled(self._phase == "done")
         return False
@@ -350,11 +346,40 @@ class InstallScreen(BaseScreen):
     def _update_ticker(self, text: str):
         self._ticker_label.set_text(text)
 
+    def _start_begin_pulse(self):
+        """Gently cycle the Begin button border/bg to draw attention."""
+        from gi.repository import Gdk as _Gdk
+        _PULSE_COLORS = [
+            (_Gdk.RGBA(0.055, 0.455, 0.565, 1), _Gdk.RGBA(0.133, 0.827, 0.933, 1)),  # cyan dim
+            (_Gdk.RGBA(0.067, 0.549, 0.678, 1), _Gdk.RGBA(0.404, 0.906, 0.969, 1)),  # cyan mid
+            (_Gdk.RGBA(0.086, 0.635, 0.784, 1), _Gdk.RGBA(0.600, 0.949, 0.992, 1)),  # cyan bright
+            (_Gdk.RGBA(0.067, 0.549, 0.678, 1), _Gdk.RGBA(0.404, 0.906, 0.969, 1)),  # back to mid
+        ]
+        def _tick():
+            if self._pulse_source is None:
+                return False
+            if not hasattr(self, '_begin_btn') or self._begin_btn is None:
+                return False
+            bg, border = _PULSE_COLORS[self._pulse_phase % len(_PULSE_COLORS)]
+            self._begin_btn.override_background_color(Gtk.StateFlags.NORMAL, bg)
+            self._begin_btn.override_color(Gtk.StateFlags.NORMAL, _Gdk.RGBA(1,1,1,1))
+            self._pulse_phase += 1
+            return True
+        self._pulse_source = GLib.timeout_add(400, _tick)
+
+    def _stop_begin_pulse(self):
+        if self._pulse_source is not None:
+            GLib.source_remove(self._pulse_source)
+            self._pulse_source = None
+        if hasattr(self, '_begin_btn') and self._begin_btn:
+            self._begin_btn.override_background_color(Gtk.StateFlags.NORMAL, None)
+
     def _on_begin_clicked(self, btn):
         self._phase = "installing"
         self._current_step = 0
         self._apply_phase()
         self._reset_step_icons()
+        self._stop_begin_pulse()
         self._start_ticker()
         self._append_log(
             "🧪 DRY RUN — no disk changes will be made\n\n"

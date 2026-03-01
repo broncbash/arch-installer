@@ -75,7 +75,7 @@ window {
 }
 
 .card-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: #e6edf3;
 }
@@ -85,8 +85,13 @@ window {
 }
 
 .card-desc {
-    font-size: 12px;
+    font-size: 10px;
     color: #8b949e;
+}
+
+/* DE/WM icon emoji — constrain size */
+.de-card-icon {
+    font-size: 18px;
 }
 
 /* ── Info panel — right pane ──────────────────────────────────────────── */
@@ -230,6 +235,22 @@ window {
 .action-button:hover {
     background-color: #30363d;
     border-color: #8b949e;
+}
+
+/* Begin Installation button — vivid cyan, pulsed via Python GLib timer */
+.begin-button {
+    background-color: #0e7490;
+    color: #ffffff;
+    border: 2px solid #22d3ee;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.begin-button:hover {
+    background-color: #155e75;
+    border-color: #67e8f9;
 }
 
 /* ── Wiki reference frame ─────────────────────────────────────────────── */

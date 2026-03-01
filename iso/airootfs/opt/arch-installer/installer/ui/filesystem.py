@@ -554,10 +554,12 @@ class FilesystemScreen(BaseScreen):
 def _passphrase_strength(pw: str) -> tuple:
     """
     Return a (label, css_class) tuple describing passphrase strength.
-    The css_class matches one of the passphrase-* classes in style.css.
-    Simple heuristic based on length and character variety.
+    Starts at Weak/red immediately on first character typed.
     """
-    score = 0
+    if not pw:
+        return "Weak", "passphrase-weak"
+    # Start at 1 so colour appears immediately
+    score = 1
     if len(pw) >= 8:  score += 1
     if len(pw) >= 12: score += 1
     if len(pw) >= 16: score += 1
@@ -568,5 +570,5 @@ def _passphrase_strength(pw: str) -> tuple:
 
     if score <= 2: return "Weak",   "passphrase-weak"
     if score <= 4: return "Fair",   "passphrase-fair"
-    if score <= 5: return "Good",   "passphrase-good"
+    if score <= 6: return "Good",   "passphrase-good"
     return              "Strong", "passphrase-strong"
