@@ -2,6 +2,7 @@
 # arch-installer-session
 # Launched by arch-installer.service as root on tty1.
 # Starts a minimal Xorg session and runs the GTK installer inside it.
+# If Plymouth is running, quits it cleanly before starting X.
 
 set -euo pipefail
 
@@ -22,8 +23,17 @@ if [[ ! -d "$INSTALLER_DIR" ]]; then
     exit 1
 fi
 
+# ── Quit Plymouth if it is running ───────────────────────────────────────────
+if command -v plymouth &>/dev/null && plymouth --ping 2>/dev/null; then
+    echo "Plymouth is running — quitting splash..."
+    plymouth quit --retain-splash 2>/dev/null || plymouth quit 2>/dev/null || true
+    sleep 0.5
+fi
+
+# ── Clean up any stale X locks from previous runs ────────────────────────────
 rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null || true
 
+# ── Environment setup ────────────────────────────────────────────────────────
 export HOME=/root
 export DISPLAY=:0
 export XAUTHORITY=/root/.Xauthority
@@ -32,8 +42,9 @@ export GTK_THEME=Adwaita:dark
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# ── Start Xorg on tty1 ───────────────────────────────────────────────────────
 echo "Starting Xorg on :0 (tty1)..."
-Xorg :0 vt1 -nolisten tcp -noreset -logfile /var/log/Xorg.0.log &
+Xorg :0 vt1 -nolisten tcp -noreset -quiet -logfile /var/log/Xorg.0.log 2>/dev/null &
 XORG_PID=$!
 
 for i in $(seq 1 40); do
