@@ -1,7 +1,6 @@
 """
 Stage 0 — Welcome / Experience Level screen
 """
-
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, Pango
@@ -47,14 +46,12 @@ class WelcomeScreen(Gtk.Box):
         self.on_next = on_next
         self._selected_level = getattr(state, "experience_level", None) or "beginner"
         self._next_called = False
-
         self._build_ui()
         self._update_info_panel()
-
-        # Reset the guard whenever this screen becomes visible (e.g. after Back)
         self.connect("map", lambda _: setattr(self, "_next_called", False))
 
     def _build_ui(self):
+        # ── Left side ─────────────────────────────────────────────────────────
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         left.set_hexpand(True)
         left.get_style_context().add_class("welcome-left")
@@ -98,29 +95,91 @@ class WelcomeScreen(Gtk.Box):
         cards_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         cards_box.set_margin_start(32)
         cards_box.set_margin_end(32)
-
         for level in ("beginner", "intermediate", "advanced"):
             card = self._make_level_card(level)
             cards_box.pack_start(card, False, False, 0)
             self._cards[level] = card
-
         left.pack_start(cards_box, False, False, 0)
+
         left.pack_start(Gtk.Box(), True, True, 0)
 
+        # ── Dry-run toggle row ────────────────────────────────────────────────
+        dryrun_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        dryrun_row.set_margin_start(32)
+        dryrun_row.set_margin_end(32)
+        dryrun_row.set_margin_top(16)
+        dryrun_row.set_margin_bottom(8)
+        dryrun_row.get_style_context().add_class("dryrun-row")
+
+        dryrun_icon = Gtk.Label(label="🧪")
+        dryrun_row.pack_start(dryrun_icon, False, False, 0)
+
+        dryrun_label_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        dryrun_title = Gtk.Label(label="Dry Run Mode")
+        dryrun_title.get_style_context().add_class("dryrun-toggle-title")
+        dryrun_title.set_halign(Gtk.Align.START)
+
+        self._dryrun_sublabel = Gtk.Label(
+            label="Enabled — nothing will be written to disk"
+            if self.state.dry_run
+            else "Disabled — this will make REAL changes to your disk!"
+        )
+        self._dryrun_sublabel.get_style_context().add_class(
+            "dryrun-toggle-sub-safe" if self.state.dry_run else "dryrun-toggle-sub-danger"
+        )
+        self._dryrun_sublabel.set_halign(Gtk.Align.START)
+        dryrun_label_box.pack_start(dryrun_title,          False, False, 0)
+        dryrun_label_box.pack_start(self._dryrun_sublabel, False, False, 0)
+        dryrun_row.pack_start(dryrun_label_box, True, True, 0)
+
+        self._dryrun_switch = Gtk.Switch()
+        self._dryrun_switch.set_active(self.state.dry_run)
+        self._dryrun_switch.set_valign(Gtk.Align.CENTER)
+        self._dryrun_switch.connect("notify::active", self._on_dryrun_toggled)
+        dryrun_row.pack_end(self._dryrun_switch, False, False, 0)
+
+        left.pack_start(dryrun_row, False, False, 0)
+
+        # ── Warning box shown when dry_run is off ─────────────────────────────
+        self._confirm_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self._confirm_box.set_margin_start(32)
+        self._confirm_box.set_margin_end(32)
+        self._confirm_box.set_margin_bottom(8)
+        self._confirm_box.get_style_context().add_class("dryrun-warning-box")
+
+        warn_icon = Gtk.Label(label="⚠")
+        warn_icon.get_style_context().add_class("dryrun-warning-icon")
+        self._confirm_box.pack_start(warn_icon, False, False, 0)
+
+        warn_text = Gtk.Label(
+            label="Real install mode is active. Disk operations WILL be performed. "
+                  "Make sure you have selected the correct disk before proceeding."
+        )
+        warn_text.get_style_context().add_class("dryrun-warning-text")
+        warn_text.set_line_wrap(True)
+        warn_text.set_xalign(0)
+        self._confirm_box.pack_start(warn_text, True, True, 0)
+
+        self._confirm_box.set_no_show_all(True)
+        if not self.state.dry_run:
+            self._confirm_box.show_all()
+        left.pack_start(self._confirm_box, False, False, 0)
+
+        # ── Continue button ───────────────────────────────────────────────────
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         btn_row.set_margin_start(32)
         btn_row.set_margin_end(32)
         btn_row.set_margin_bottom(24)
-        btn_row.set_margin_top(16)
+        btn_row.set_margin_top(8)
 
         self.next_btn = Gtk.Button(label="Continue  →")
         self.next_btn.get_style_context().add_class("next-button")
         self.next_btn.set_halign(Gtk.Align.END)
         self.next_btn.connect("clicked", self._on_next_clicked)
         btn_row.pack_end(self.next_btn, False, False, 0)
-
         left.pack_start(btn_row, False, False, 0)
 
+        # ── Right info panel ──────────────────────────────────────────────────
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         right.get_style_context().add_class("info-panel")
         right.set_size_request(300, -1)
@@ -157,34 +216,42 @@ class WelcomeScreen(Gtk.Box):
 
     def _make_level_card(self, level):
         name, desc = LEVEL_LABELS[level]
-
         card = Gtk.EventBox()
         card.get_style_context().add_class("level-card")
-
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         inner.set_margin_top(14)
         inner.set_margin_bottom(14)
         inner.set_margin_start(18)
         inner.set_margin_end(18)
-
         name_lbl = Gtk.Label(label=name)
         name_lbl.get_style_context().add_class("card-title")
         name_lbl.set_halign(Gtk.Align.START)
-
         desc_lbl = Gtk.Label(label=desc)
         desc_lbl.get_style_context().add_class("card-desc")
         desc_lbl.set_halign(Gtk.Align.START)
         desc_lbl.set_line_wrap(True)
-
         inner.pack_start(name_lbl, False, False, 0)
         inner.pack_start(desc_lbl, False, False, 0)
         card.add(inner)
-
         card.connect("button-press-event", lambda w, e, lv=level: self._select_level(lv))
         card.connect("enter-notify-event", lambda w, e: w.get_style_context().add_class("hover"))
         card.connect("leave-notify-event", lambda w, e: w.get_style_context().remove_class("hover"))
-
         return card
+
+    def _on_dryrun_toggled(self, switch, _param):
+        dry = switch.get_active()
+        self.state.dry_run = dry
+        ctx = self._dryrun_sublabel.get_style_context()
+        if dry:
+            self._dryrun_sublabel.set_text("Enabled — nothing will be written to disk")
+            ctx.remove_class("dryrun-toggle-sub-danger")
+            ctx.add_class("dryrun-toggle-sub-safe")
+            self._confirm_box.hide()
+        else:
+            self._dryrun_sublabel.set_text("Disabled — this will make REAL changes to your disk!")
+            ctx.remove_class("dryrun-toggle-sub-safe")
+            ctx.add_class("dryrun-toggle-sub-danger")
+            self._confirm_box.show_all()
 
     def _select_level(self, level):
         self._selected_level = level
