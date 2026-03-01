@@ -1,0 +1,104 @@
+// arch-installer Plymouth theme
+// Y-axis flip effect (X-scale pulse) with pulsing cyan glow
+
+Window.SetBackgroundTopColor(0.07, 0.07, 0.12);
+Window.SetBackgroundBottomColor(0.05, 0.05, 0.09);
+
+logo.image  = Image("logo.png");
+glow.image  = Image("glow.png");
+
+glow.sprite = Sprite();
+glow.sprite.SetImage(glow.image);
+glow.sprite.SetZ(1);
+
+logo.sprite = Sprite();
+logo.sprite.SetImage(logo.image);
+logo.sprite.SetZ(2);
+
+logo.w = logo.image.GetWidth();
+logo.h = logo.image.GetHeight();
+glow.w = glow.image.GetWidth();
+glow.h = glow.image.GetHeight();
+
+glow.sprite.SetX(Window.GetWidth()  / 2 - glow.w / 2);
+glow.sprite.SetY(Window.GetHeight() / 2 - glow.h / 2);
+
+// Y-axis flip state
+flip_angle  = 0.0;   // 0 to 6.2832 (full cycle)
+flip_speed  = 0.04;  // speed of flip
+
+// Glow pulse state
+glow_alpha  = 0.3;
+glow_dir    = 1;
+
+// Progress bar
+progress_bar.image  = Image.New(1, 3);
+progress_bar.sprite = Sprite(progress_bar.image);
+progress_bar.sprite.SetX(0);
+progress_bar.sprite.SetY(Window.GetHeight() - 4);
+progress_bar.sprite.SetZ(4);
+
+fun refresh_callback()
+{
+    // ── Y-axis flip via X scaling ─────────────────────────────────────────
+    flip_angle = flip_angle + flip_speed;
+    if (flip_angle > 6.2832) flip_angle = 0.0;
+
+    // Math.Cos goes from 1 -> 0 -> -1 -> 0 -> 1
+    // We take abs() so it goes 1 -> 0 -> 1 (squish and expand = one flip)
+    scale_x = Math.Abs(Math.Cos(flip_angle));
+
+    // Avoid scale of exactly 0 — Plymouth may not handle it well
+    if (scale_x < 0.02) scale_x = 0.02;
+
+    scaled_w = Math.Int(logo.w * scale_x);
+    if (scaled_w < 1) scaled_w = 1;
+
+    scaled = logo.image.Scale(scaled_w, logo.h);
+    logo.sprite.SetImage(scaled);
+
+    // Keep centered as width changes
+    logo.sprite.SetX(Window.GetWidth()  / 2 - scaled_w / 2);
+    logo.sprite.SetY(Window.GetHeight() / 2 - logo.h   / 2);
+
+    // ── Pulse the glow ────────────────────────────────────────────────────
+    glow_alpha = glow_alpha + (glow_dir * 0.015);
+    if (glow_alpha >= 0.85) { glow_alpha = 0.85; glow_dir = -1; }
+    if (glow_alpha <= 0.15) { glow_alpha = 0.15; glow_dir =  1; }
+    glow.sprite.SetOpacity(glow_alpha);
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback(duration, progress)
+{
+    if (progress > 1.0) progress = 1.0;
+    bar_width = Math.Int(Window.GetWidth() * progress);
+    if (bar_width < 1) bar_width = 1;
+
+    bar_img = Image.New(bar_width, 3);
+    bar_img.Rectangle(0, 0, bar_width, 3, 0.36, 0.78, 0.94, 1.0);
+    progress_bar.sprite.SetImage(bar_img);
+}
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+message_sprite = Sprite();
+message_sprite.SetZ(5);
+
+fun display_message_callback(text)
+{
+    my_image = Image.Text(text, 0.8, 0.8, 0.8, 1.0);
+    message_sprite.SetImage(my_image);
+    message_sprite.SetX(Window.GetWidth()  / 2 - my_image.GetWidth()  / 2);
+    message_sprite.SetY(Window.GetHeight() - 40);
+}
+
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+
+fun hide_message_callback(text)
+{
+    message_sprite.SetImage(Image.New(1,1));
+}
+
+Plymouth.SetHideMessageFunction(hide_message_callback);
