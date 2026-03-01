@@ -48,6 +48,7 @@ pacman-contrib
 # ── Python runtime ────────────────────────────────────────────────────────────
 python
 python-pip
+python-pillow
 
 # ── GTK3 + GObject / Cairo ────────────────────────────────────────────────────
 gtk3
@@ -75,6 +76,9 @@ libva-mesa-driver
 vulkan-radeon
 vulkan-intel
 xf86-input-libinput
+
+# ── Plymouth boot splash ──────────────────────────────────────────────────────
+plymouth
 
 # ── Fonts ─────────────────────────────────────────────────────────────────────
 ttf-dejavu
