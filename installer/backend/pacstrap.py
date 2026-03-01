@@ -156,6 +156,10 @@ def _step_partition(state) -> tuple:
     # Update partition device paths in state
     _assign_partition_devices(state)
 
+    # Tell the kernel to re-read the partition table before format step runs
+    run_cmd(["partprobe", disk], state, "Re-read partition table")
+    run_cmd(["sleep", "2"], state, "Wait for kernel to register partitions")
+
     return True, "\n".join(logs)
 
 
