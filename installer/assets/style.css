@@ -329,3 +329,46 @@ progressbar.strength-weak   progress { background-color: #f85149; }
 progressbar.strength-fair   progress { background-color: #d29922; }
 progressbar.strength-good   progress { background-color: #3fb950; }
 progressbar.strength-strong progress { background-color: #58a6ff; }
+
+/* ── Dry-run toggle row (welcome screen) ──────────────────────────────── */
+.dryrun-row {
+   background-color: #161b22;
+   border: 1px solid #30363d;
+   border-radius: 6px;
+   padding: 10px;
+}
+
+.dryrun-toggle-title {
+   color: #e6edf3;
+   font-size: 13px;
+   font-weight: bold;
+}
+
+.dryrun-toggle-sub-safe {
+   color: #3fb950;
+   font-size: 12px;
+}
+
+.dryrun-toggle-sub-danger {
+   color: #f85149;
+   font-size: 12px;
+   font-weight: bold;
+}
+
+/* ── Dry-run warning box (shown when dry_run is disabled) ─────────────── */
+.dryrun-warning-box {
+   background-color: #3d0000;
+   border: 1px solid #f85149;
+   border-radius: 6px;
+   padding: 10px;
+}
+
+.dryrun-warning-icon {
+   color: #f85149;
+   font-size: 18px;
+}
+
+.dryrun-warning-text {
+   color: #ff7b72;
+   font-size: 12px;
+}
