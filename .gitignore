@@ -1,0 +1,7 @@
+iso/out/
+/tmp/
+*.iso
+*.img
+__pycache__/
+*.pyc
+.DS_Store
