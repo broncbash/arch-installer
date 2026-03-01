@@ -1,0 +1,374 @@
+/*
+ * arch-installer — style.css
+ * Dark GitHub-style theme. Stage 0 + Stage 1 styles included.
+ *
+ * Colour palette (CSS-compatible references)
+ *   --bg-0:      #0d1117   deepest background
+ *   --bg-1:      #161b22   card / panel background
+ *   --bg-2:      #21262d   elevated surface / hover
+ *   --border:    #30363d   standard border
+ *   --border-hl: #58a6ff   highlighted / selected border
+ *   --fg-0:      #e6edf3   primary text
+ *   --fg-1:      #8b949e   secondary / muted text
+ *   --accent:    #58a6ff   blue accent (links, selected)
+ *   --green:     #3fb950   success
+ *   --red:       #f85149   error
+ *   --yellow:    #d29922   warning
+ */
+
+/* ── Window root ───────────────────────────────────────────────────────── */
+window {
+    background-color: #0d1117;
+    color: #e6edf3;
+    font-family: "JetBrains Mono", "Source Code Pro", "Fira Code", monospace;
+    font-size: 14px;
+}
+
+/* ── Welcome screen — left pane ───────────────────────────────────────── */
+.welcome-left {
+    background-color: #0d1117;
+}
+
+.welcome-logo {
+    font-size: 40px;
+    color: #58a6ff;
+    margin-bottom: 12px;
+}
+
+.welcome-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #e6edf3;
+    letter-spacing: -0.5px;
+}
+
+.welcome-subtitle {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 4px;
+}
+
+.section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b949e;
+    /* text-transform: uppercase; — not valid in GTK CSS */
+    letter-spacing: 1.2px;
+}
+
+/* ── Level cards ──────────────────────────────────────────────────────── */
+.level-card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+.level-card.hover {
+    background-color: #1c2128;
+    border-color: #8b949e;
+}
+
+.level-card.selected {
+    background-color: #0c2d6b;
+    border-color: #58a6ff;
+    border-width: 2px;
+}
+
+.card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e6edf3;
+}
+
+.level-card.selected .card-title {
+    color: #79c0ff;
+}
+
+.card-desc {
+    font-size: 12px;
+    color: #8b949e;
+}
+
+/* ── Info panel — right pane ──────────────────────────────────────────── */
+.info-panel {
+    background-color: #161b22;
+    border-left: 1px solid #30363d;
+}
+
+.info-panel-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #58a6ff;
+    /* text-transform: uppercase; — not valid in GTK CSS */
+    letter-spacing: 1px;
+}
+
+.info-panel-text {
+    font-size: 13px;
+    color: #8b949e;
+}
+
+/* ── Navigation buttons ───────────────────────────────────────────────── */
+.next-button {
+    background-color: #1f6feb;
+    color: #ffffff;
+    border: 1px solid #388bfd;
+    border-radius: 6px;
+    padding: 6px 20px;
+    font-weight: 600;
+    font-size: 13px;
+    min-width: 120px;
+}
+
+.next-button:hover {
+    background-color: #388bfd;
+}
+
+.next-button:active {
+    background-color: #1158c7;
+}
+
+.nav-bar {
+    background-color: #0d1117;
+}
+
+.nav-btn {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 6px 18px;
+    font-size: 13px;
+}
+
+.nav-btn:hover {
+    background-color: #30363d;
+    border-color: #8b949e;
+}
+
+.nav-btn-next {
+    background-color: #1f6feb;
+    color: #ffffff;
+    border-color: #388bfd;
+}
+
+.nav-btn-next:hover {
+    background-color: #388bfd;
+}
+
+/* ── Screen title / subtitle (BaseScreen) ─────────────────────────────── */
+.screen-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e6edf3;
+}
+
+.screen-subtitle {
+    font-size: 13px;
+    color: #8b949e;
+    margin-top: 2px;
+}
+
+.screen-sep {
+    background-color: #30363d;
+    min-height: 1px;
+}
+
+/* ── Section headings (within screen content) ─────────────────────────── */
+.section-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b949e;
+    margin-top: 8px;
+}
+
+/* ── Cards (status card, network list, etc.) ──────────────────────────── */
+.card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+/* ── Detail grid labels ───────────────────────────────────────────────── */
+.detail-key {
+    font-size: 12px;
+    color: #8b949e;
+}
+
+.detail-value {
+    font-size: 12px;
+    color: #e6edf3;
+}
+
+/* ── Status labels ────────────────────────────────────────────────────── */
+.status-ok {
+    color: #3fb950;
+    font-weight: 600;
+}
+
+.status-error {
+    color: #f85149;
+    font-weight: 600;
+}
+
+/* ── Error label in nav bar ───────────────────────────────────────────── */
+.error-label {
+    font-size: 12px;
+    color: #f85149;
+}
+
+/* ── Action buttons (Scan, Connect, Refresh) ──────────────────────────── */
+.action-button {
+    background-color: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 13px;
+}
+
+.action-button:hover {
+    background-color: #30363d;
+    border-color: #8b949e;
+}
+
+/* ── Wiki reference frame ─────────────────────────────────────────────── */
+.wiki-frame {
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.wiki-frame-title {
+    color: #58a6ff;
+    font-size: 12px;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.wiki-link-button {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #58a6ff;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+.wiki-link-button:hover {
+    background-color: #21262d;
+    border-color: #58a6ff;
+}
+
+/* ── Separators ───────────────────────────────────────────────────────── */
+separator {
+    background-color: #30363d;
+    min-height: 1px;
+}
+
+/* ── TreeView / list row selection ───────────────────────────────────────
+   GTK3 CSS uses :selected on the treeview itself, not on row children.
+   We use a low-opacity blue so text remains readable beneath it.         */
+
+treeview {
+    background-color: #161b22;
+    color: #e6edf3;
+}
+
+treeview:selected {
+    background-color: rgba(88, 166, 255, 0.18);
+    color: #e6edf3;
+}
+
+treeview:selected:focus {
+    background-color: rgba(88, 166, 255, 0.25);
+    color: #79c0ff;
+}
+
+/* ── Disk selection cards ─────────────────────────────────────────────── */
+.disk-card {
+    background-color: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+
+.disk-card:hover {
+    background-color: #1c2128;
+    border-color: #8b949e;
+}
+
+.disk-card-selected {
+    background-color: #0c2d6b;
+    border: 2px solid #58a6ff;
+    border-radius: 6px;
+}
+
+/* ── Dry-run warning banner ───────────────────────────────────────────── */
+.dry-run-banner {
+    background-color: #3d0000;
+    border-bottom: 2px solid #f85149;
+    padding: 6px 0;
+    min-height: 32px;
+}
+
+.dry-run-text {
+    color: #ff7b72;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 0 8px;
+}
+
+/* ── Password / passphrase strength colours ───────────────────────────── */
+.passphrase-weak   { border-color: #f85149; }
+.passphrase-fair   { border-color: #d29922; }
+.passphrase-good   { border-color: #3fb950; }
+.passphrase-strong { border-color: #58a6ff; }
+
+/* ── Password strength progress bar colours ───────────────────────────── */
+progressbar.strength-weak   progress { background-color: #f85149; }
+progressbar.strength-fair   progress { background-color: #d29922; }
+progressbar.strength-good   progress { background-color: #3fb950; }
+progressbar.strength-strong progress { background-color: #58a6ff; }
+
+/* ── Dry-run toggle row (welcome screen) ──────────────────────────────── */
+.dryrun-row {
+   background-color: #161b22;
+   border: 1px solid #30363d;
+   border-radius: 6px;
+   padding: 10px;
+}
+
+.dryrun-toggle-title {
+   color: #e6edf3;
+   font-size: 13px;
+   font-weight: bold;
+}
+
+.dryrun-toggle-sub-safe {
+   color: #3fb950;
+   font-size: 12px;
+}
+
+.dryrun-toggle-sub-danger {
+   color: #f85149;
+   font-size: 12px;
+   font-weight: bold;
+}
+
+/* ── Dry-run warning box (shown when dry_run is disabled) ─────────────── */
+.dryrun-warning-box {
+   background-color: #3d0000;
+   border: 1px solid #f85149;
+   border-radius: 6px;
+   padding: 10px;
+}
+
+.dryrun-warning-icon {
+   color: #f85149;
+   font-size: 18px;
+}
+
+.dryrun-warning-text {
+   color: #ff7b72;
+   font-size: 12px;
+}

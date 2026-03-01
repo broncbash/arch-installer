@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Arch Installer
+GenericName=System Installer
+Comment=Full-featured graphical installer for Arch Linux
+Exec=arch-installer
+Icon=arch-installer
+Terminal=false
+Categories=System;
+Keywords=arch;linux;install;installer;
+StartupNotify=true
+StartupWMClass=arch-installer
