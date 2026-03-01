@@ -14,7 +14,7 @@
 
 > ⚠️ **This project is in active development and not yet ready for use on real hardware.**
 > The installer boots and runs from a custom ISO in a VM. End-to-end install testing
-> is in progress.
+> is in progress — base system install nearly complete.
 
 ---
 
@@ -47,9 +47,10 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 - **Complete / Reboot** — post-install chroot config: locale, keyboard, timezone,
   initramfs (mkinitcpio or dracut), bootloader install, service enablement,
   unmount, reboot
-- **Dry-run mode** — yellow banner + full simulation so you can test safely anywhere
-- **Custom bootable ISO** — archiso profile boots directly into the GTK installer
-  with no desktop environment required; tested in QEMU/KVM
+- **Dry-run toggle** — toggle switch on the welcome screen; defaults to safe
+  dry-run mode with a live banner that hides when disabled
+- **Custom bootable ISO** — archiso profile boots directly into the GTK installer;
+  Plymouth boot splash with animated logo (Y-axis flip + pulsing cyan glow)
 
 ---
 
@@ -74,7 +75,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 14 | Bootloader | ✅ Complete |
 | 15 | Complete / Reboot | ✅ Complete |
 
-All 16 stages complete. End-to-end install testing in progress. 🚧
+All 16 stages complete. End-to-end VM install testing in progress. 🚧
 
 ---
 
@@ -87,26 +88,24 @@ prompt.
 ### Build the ISO
 
 ```bash
-sudo rm -rf /tmp/archiso-work /tmp/archiso-out
-sudo mkarchiso -v \
-  -w /tmp/archiso-work \
-  -o /tmp/archiso-out \
-  /path/to/arch-installer/iso
+sudo ./build.sh
 ```
 
-The work directory **must be local** (not NFS) — use `/tmp/archiso-work`.
+`build.sh` automatically syncs the installer source into the ISO airootfs, cleans
+previous build artifacts, and runs `mkarchiso`. The ISO is output to `/tmp/archiso-out/`.
 
 ### What the ISO does on boot
 
-1. systemd starts `arch-installer.service`
-2. Service runs `/usr/local/bin/arch-installer-session` as root on tty1
-3. Session script starts a minimal Xorg server
-4. GTK3 installer launches fullscreen automatically
-5. User goes through all stages and installs Arch Linux
+1. Plymouth displays the animated boot splash (spinning logo + pulsing glow)
+2. systemd starts `arch-installer.service` after NetworkManager is online
+3. Service runs `/usr/local/bin/arch-installer-session` as root on tty1
+4. Session script quits Plymouth, starts a minimal Xorg server
+5. GTK3 installer launches fullscreen automatically
+6. User goes through all stages and installs Arch Linux
 
 ### Boot entries
 
-- **Normal** — quiet boot, autostart installer
+- **Normal** — quiet boot with Plymouth splash, autostart installer
 - **Debug** — `systemd.unit=multi-user.target`, drops to TTY for troubleshooting
 
 ---
@@ -136,25 +135,18 @@ The installer must be run as root. It will exit with a clear error message if
 launched without `sudo`. On a live ISO, root is already the active user so no
 `sudo` is needed.
 
-The installer starts in **dry-run mode** by default — a yellow banner is shown and
-no disk operations are performed. To perform a real install, set
-`dry_run = False` in `installer/state.py`.
-
 ---
 
 ## Safety: Dry-Run Mode
 
-- A **yellow warning banner** is shown at the top of every screen
-- All disk operations are **logged but never executed**
-- The install screen shows "🧪 Begin Dry Run" instead of "Begin Installation"
-- The complete screen shows "🧪 Begin Dry Run" and closes instead of rebooting
-- The full UI flow works identically — progress bars, logs, step indicators
+The welcome screen has a **Dry Run Mode toggle switch** — enabled by default.
 
-To perform a real install:
-```python
-# installer/state.py
-dry_run: bool = False
-```
+- When **on**: a banner is shown at the top of every screen, all disk operations
+  are logged but never executed, the install screen shows "🧪 Begin Dry Run"
+- When **off**: a red warning box appears on the welcome screen, the banner
+  disappears, and real disk operations will be performed
+
+The toggle updates `state.dry_run` live — no need to edit any source files.
 
 ---
 
@@ -162,31 +154,22 @@ dry_run: bool = False
 
 **All choices come before the install.** Packages, timezone, hostname, users —
 everything is configured first on the Review & Confirm screen. Pacstrap runs
-after confirmation with the complete picture. This means the shell you pick
-for your user (zsh, fish) is automatically included in the pacstrap package list.
+after confirmation with the complete picture.
 
 **Experience levels** control what's visible on every screen:
 - Beginner sees only the safest options with plain-language explanations
 - Intermediate unlocks more choices with brief technical context
 - Advanced exposes everything with full technical detail
 
-**Initramfs generator** is an Advanced-only choice on the System Config screen.
-Beginner and Intermediate users always get mkinitcpio (the Arch default) silently.
-Advanced users can switch to dracut via radio buttons. The choice is reflected in
-the Review summary and drives the actual command run in Stage 15.
-
 **Arch Wiki links** are available on every screen via a collapsible expander
-at the bottom of the hints panel. Collapsed by default so the hint text always
-has room to breathe — one click to expand when you need a reference.
+at the bottom of the hints panel.
 
-**Review & Confirm** is a read-only summary of every selection made across all
-prior stages. Each section has an ✏ Edit button that jumps directly back to that
-stage. After editing, clicking Next on the edited screen returns automatically to
-Review — no need to step through intermediate screens.
+**Review & Confirm** is a read-only summary of every selection. Each section
+has an ✏ Edit button that jumps directly back to that stage and returns
+automatically after editing.
 
 **Live install status ticker** — during pacstrap, a spinner and status line show
-the current package being downloaded or installed in real time, so the screen
-never looks frozen during long installs.
+the current package being downloaded or installed in real time.
 
 ---
 

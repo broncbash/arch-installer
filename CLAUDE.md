@@ -510,17 +510,18 @@ Sufficient for downloading extra packages at runtime if needed.
 - [ ] LVM support
 - [ ] Dual-boot / existing partition preservation
 - [ ] Secure Boot key enrollment — deferred post-bootloader
-- [ ] Full end-to-end install test — pacstrap and most steps complete successfully.
+- [ ] Full end-to-end install test — pacstrap downloads and installs successfully.
       Remaining known issues:
-      - Mirror reliability: kernel.org drops connections under load — ISO mirrorlist
-        needs more fallback mirrors
-      - `file_permissions` in profiledef.sh not applying chmod to session script —
-        workaround: `chmod +x /usr/local/bin/arch-installer-session` after boot
-- [ ] Plymouth boot splash — custom boot splash using project icon with pulsing
-      glow animation. Hides bootloader menu and kernel output, fades out when
-      GTK installer is ready. Stack: Plymouth + custom theme (script + PNG) +
-      `quiet splash` kernel params + 0 bootloader timeout. Deferred until
-      installer is confirmed working end-to-end.
+      - `partprobe` + sleep needed after sgdisk so kernel registers new partitions
+        before format step runs — fix applied in session 16
+      - Mirror reliability: kernel.org drops connections under load — use
+        rackspace/osuosl/arizona mirrors instead
+- [ ] Plymouth Y-axis flip animation — logo flips on Y axis using X-scale trick.
+      Circle background removed from logo.png via pixel masking. Working in ISO.
+- [ ] Installer icon not showing in window title bar — fixed in session 16 via
+      absolute ASSETS_DIR path and GdkPixbuf loading in main.py
+- [ ] NAS→ISO sync — airootfs/opt/arch-installer is a separate copy of the repo.
+      build.sh now runs rsync before mkarchiso to keep them in sync automatically.
 
 ---
 
@@ -578,3 +579,15 @@ Sufficient for downloading extra packages at runtime if needed.
 | 15      | feat(install): Begin button fixed outside scroll area                        |
 | 15      | feat(install): live status ticker during pacstrap using run_cmd_streaming    |
 | 15      | docs: update CLAUDE.md — all session 15 ISO lessons, troubleshooting table   |
+| 16      | fix(iso): profiledef.sh — remove declare -A from file_permissions            |
+| 16      | fix(iso): NetworkManager-wait-online dependency in arch-installer.service    |
+| 16      | fix(iso): Xorg -quiet flag — suppress console output during X startup        |
+| 16      | fix(iso): add partprobe + sleep after sgdisk — kernel partition registration |
+| 16      | fix(main): icon loading via GdkPixbuf with absolute ASSETS_DIR path          |
+| 16      | fix(main): dry-run banner now dynamic — hides when toggle turns off dry_run  |
+| 16      | feat(welcome): dry_run toggle switch with live warning box                   |
+| 16      | feat(iso): Plymouth boot splash — Y-axis flip animation, pulsing cyan glow   |
+| 16      | feat(iso): build.sh — rsync installer into airootfs before mkarchiso         |
+| 16      | feat(iso): generate_glow.py — generates Plymouth glow.png asset              |
+| 16      | fix(iso): Plymouth logo — circle background removed, just the Arch "A"       |
+| 16      | docs: update CLAUDE.md and README.md — session 16 complete                   |
