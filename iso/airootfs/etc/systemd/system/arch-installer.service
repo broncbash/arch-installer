@@ -1,0 +1,23 @@
+[Unit]
+Description=Arch Installer GTK Session
+After=multi-user.target NetworkManager.service NetworkManager-wait-online.service
+Wants=NetworkManager.service NetworkManager-wait-online.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/arch-installer-session
+Restart=on-failure
+RestartSec=3s
+User=root
+PAMName=login
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=HOME=/root
+Environment=TERM=linux
+
+[Install]
+WantedBy=multi-user.target
