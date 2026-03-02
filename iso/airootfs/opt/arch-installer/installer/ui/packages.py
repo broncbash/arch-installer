@@ -330,8 +330,6 @@ class PackageScreen(BaseScreen):
     # ── Content ───────────────────────────────────────────────────────────────
 
     def build_content(self) -> Gtk.Widget:
-        # Note: base_screen already wraps build_content() in a ScrolledWindow,
-        # so we return a plain Box here to avoid double-nesting.
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
 
         # ── DE picker ─────────────────────────────────────────────────────────
@@ -353,8 +351,13 @@ class PackageScreen(BaseScreen):
     # ── DE section ────────────────────────────────────────────────────────────
 
     def _build_de_section(self) -> Gtk.Widget:
+        # set_size_request is necessary because GTK3 ScrolledWindow always
+        # allocates its child the full viewport width, ignoring halign/hexpand.
+        # 560px fits 4 cards (130px + 6px gap each) with room to spare.
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
+        frame.set_size_request(750, -1)
+        frame.set_halign(Gtk.Align.START)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_start(14)
@@ -367,28 +370,30 @@ class PackageScreen(BaseScreen):
         heading.set_xalign(0)
         box.pack_start(heading, False, False, 0)
 
-        # DE cards in a wrapping flow (handles any number of options)
-        cards_box = Gtk.FlowBox()
-        cards_box.set_min_children_per_line(2)
-        cards_box.set_max_children_per_line(3)
-        cards_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        cards_box.set_homogeneous(False)
-        cards_box.set_row_spacing(6)
-        cards_box.set_column_spacing(6)
-        cards_box.set_halign(Gtk.Align.START)
+        # 3×3 grid of DE cards using plain HBoxes — 3 per row keeps total
+        # window width within the VM display (3×115 + gaps + margins ~ 803px).
+        # FlowBox is avoided because it stretches to fill the ScrolledWindow
+        # viewport regardless of halign/hexpand settings in GTK3.
+        cards_outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
-        for de in DE_OPTIONS:
+        cols = 3
+        current_row = None
+        for i, de in enumerate(DE_OPTIONS):
+            if i % cols == 0:
+                current_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                cards_outer.pack_start(current_row, False, False, 0)
             card = self._make_de_card(de)
             self._de_cards[de["id"]] = card
-            cards_box.add(card)
+            current_row.pack_start(card, False, False, 0)
 
-        box.pack_start(cards_box, False, False, 0)
+        box.pack_start(cards_outer, False, False, 0)
 
         # Description label that updates when a card is clicked
         self._de_desc = Gtk.Label()
         self._de_desc.get_style_context().add_class("detail-value")
         self._de_desc.set_xalign(0)
         self._de_desc.set_line_wrap(True)
+        self._de_desc.set_max_width_chars(40)
         self._de_desc.set_margin_top(6)
         box.pack_start(self._de_desc, False, False, 0)
 
@@ -403,7 +408,7 @@ class PackageScreen(BaseScreen):
         eb = Gtk.EventBox()
         eb.get_style_context().add_class("level-card")
         # Fixed size — prevents FlowBox from stretching cards to fill row width
-        eb.set_size_request(150, 95)
+        eb.set_size_request(230, 110)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
@@ -498,6 +503,9 @@ class PackageScreen(BaseScreen):
     def _build_extras_section(self) -> Gtk.Widget:
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
+        frame.set_hexpand(False)
+        frame.set_size_request(750, -1)
+        frame.set_halign(Gtk.Align.START)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)
@@ -539,6 +547,8 @@ class PackageScreen(BaseScreen):
                 desc_lbl = Gtk.Label(label=f"— {desc}")
                 desc_lbl.get_style_context().add_class("detail-key")
                 desc_lbl.set_xalign(0)
+                desc_lbl.set_max_width_chars(30)
+                desc_lbl.set_ellipsize(Pango.EllipsizeMode.END)
                 chk_box.pack_start(name_lbl, False, False, 0)
                 chk_box.pack_start(desc_lbl, False, False, 0)
                 chk.add(chk_box)
@@ -566,6 +576,7 @@ class PackageScreen(BaseScreen):
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_min_content_height(200)
         scroll.set_max_content_height(260)
+        scroll.set_hexpand(False)
         scroll.add(grid)
 
         box.pack_start(scroll, False, False, 0)
@@ -588,6 +599,8 @@ class PackageScreen(BaseScreen):
     def _build_custom_section(self) -> Gtk.Widget:
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
+        frame.set_size_request(750, -1)
+        frame.set_halign(Gtk.Align.START)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)

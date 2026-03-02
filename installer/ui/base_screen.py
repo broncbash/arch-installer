@@ -252,6 +252,7 @@ class BaseScreen(Gtk.Box):
         self.hint_label.set_valign(Gtk.Align.START)
         self.hint_label.set_line_wrap(True)
         self.hint_label.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.hint_label.set_max_width_chars(28)
         self.hint_label.set_margin_start(16)
         self.hint_label.set_margin_end(16)
         self.hint_label.set_margin_top(12)

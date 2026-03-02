@@ -5,3 +5,6 @@ iso/out/
 __pycache__/
 *.pyc
 .DS_Store
+build.sh
+bld_cr.sh
+create_vm.sh

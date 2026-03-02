@@ -40,7 +40,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
   initramfs generator choice (mkinitcpio / dracut) for Advanced users
 - **User setup** — username, password, sudo, shell picker, group checkboxes
 - **Review & Confirm** — full summary of every selection before anything touches disk;
-  ✏ Edit buttons jump directly back to any stage and return automatically
+  Edit buttons jump directly back to any stage and return automatically
 - **Base system install** — pacstrap with live streaming status, per-step progress,
   retry on error; optimized pacman.conf (ParallelDownloads=10) for faster downloads
 - **LUKS encryption** — full dm-crypt/LUKS2 with correct initramfs hooks,
@@ -82,12 +82,13 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
 
 ## Known Issues
 
-- **Package selection screen width** — the DE/WM card container stretches to fill
-  the full content area, partially obscuring the hints panel on smaller displays
+- **Package selection screen gap** — The DE/WM card container is fixed-width and
+  sits left-aligned, leaving empty space before the hints panel. Cosmetic only —
+  all functionality works correctly.
 - **LUKS pre-menu passphrase prompt** — when using Beginner auto-partitioning with
   LUKS, GRUB asks for the passphrase before showing the boot menu because `/boot`
   lives inside the encrypted root partition. A separate `/boot` partition in the
-  auto layout will fix this in the next session.
+  auto layout will fix this in a future session.
 
 ---
 
