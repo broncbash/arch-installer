@@ -309,7 +309,7 @@ class UsersScreen(BaseScreen):
 
         group_checks = {}
         # Default groups to pre-tick for a typical desktop user
-        default_groups = {"audio", "video", "storage", "optical", "input"}
+        default_groups = {"audio", "video", "storage", "network", "input"}
         for group_name, group_desc in EXTRA_GROUPS:
             chk = Gtk.CheckButton(label=group_name)
             chk.get_style_context().add_class("detail-value")
