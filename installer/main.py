@@ -11,7 +11,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf
 
 from installer.privilege import require_root
-from installer.state import InstallState
+from installer.state import InstallState, DEV_AUTOFILL
 from installer.ui.welcome import WelcomeScreen
 from installer.ui.network import NetworkScreen
 from installer.ui.keyboard import KeyboardScreen
@@ -230,10 +230,35 @@ class InstallerWindow(Gtk.Window):
 
         self._update_banner()
 
+    def _dev_advance_stage(self, stage_index: int):
+        """
+        Called by GLib.timeout_add to auto-advance through a stage.
+        Only fires if we're still on the same stage (guards against double-advance).
+        """
+        if self._current_stage != stage_index:
+            return False  # already moved on, do nothing
+        screen = self._stack.get_child_by_name(self._stage_name(stage_index))
+        if screen is None:
+            return False
+        # Run validate + on_next + advance, same as clicking Next manually
+        ok, msg = screen.validate()
+        if ok:
+            screen.on_next()
+            self._advance()
+        return False  # one-shot timer
+
     def _go_back(self):
         """Move back one stage."""
         if self._current_stage > 0:
             self._go_to_stage(self._current_stage - 1)
+
+    # Stages that can auto-advance when DEV_AUTOFILL is active.
+    # These are stages where all data is pre-filled and no user input needed.
+    # Stops at STAGE_REVIEW (12) so the user can confirm before installing.
+    # Uses integer values directly since class constants aren't available here.
+    _DEV_AUTO_STAGES = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+    # 1=Network, 2=Keyboard, 3=Locale, 4=Disk, 5=Partition, 6=Filesystem,
+    # 7=Mirrors, 8=Packages, 9=Timezone, 10=SysConfig, 11=Users
 
     def _go_to_stage(self, index: int):
         """Switch the stack to the given stage, building it if needed."""
@@ -242,6 +267,12 @@ class InstallerWindow(Gtk.Window):
             self._build_stage(index)
         self._stack.set_visible_child_name(name)
         self._current_stage = index
+
+        # Dev autofill: auto-advance through pre-filled screens.
+        # Use a 500ms delay so the screen fully renders and _nav_ready fires
+        # before we try to advance. Only one timer is ever pending at a time.
+        if DEV_AUTOFILL and index in self._DEV_AUTO_STAGES:
+            GLib.timeout_add(500, self._dev_advance_stage, index)
 
     def _jump_to_stage(self, index: int):
         """Called by ReviewScreen edit buttons to jump back to an earlier stage."""

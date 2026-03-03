@@ -89,6 +89,12 @@ class FilesystemScreen(BaseScreen):
         super().__init__(state=state, on_next=on_next, on_back=on_back)
         self.set_next_enabled(True)
 
+        # Dev autofill: auto-advance (Next is already enabled, no validation needed)
+        from installer.state import DEV_AUTOFILL
+        from gi.repository import GLib
+        if DEV_AUTOFILL:
+            GLib.idle_add(self._dev_auto_advance)
+
     # ── Hints ─────────────────────────────────────────────────────────────────
 
     def get_hints(self) -> dict:
@@ -501,6 +507,14 @@ class FilesystemScreen(BaseScreen):
             ctx.add_class(css_class)
 
     # ── Validate and save ─────────────────────────────────────────────────────
+
+    def _dev_auto_advance(self):
+        """Auto-click Next when DEV_AUTOFILL is active."""
+        ok, _ = self.validate()
+        if ok:
+            self.on_next()
+            self._on_next_cb()
+        return False
 
     def validate(self):
         if not self.state.partitions:

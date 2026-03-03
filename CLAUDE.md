@@ -103,6 +103,7 @@ arch-installer/
 ├── README.md
 ├── installer/
 │   ├── main.py                 <- entry point, stage controller
+│   ├── dev_prefill.py          <- DEV_AUTOFILL test defaults (remove when done)
 │   ├── privilege.py            <- root check
 │   ├── state.py                <- global install state (DiskPartition, InstallState)
 │   ├── ui/
@@ -305,6 +306,21 @@ password_box = Sprite() etc.
   Fix: add a separate unencrypted 512MB ext4 /boot partition to
   _build_auto_layout() in partition.py when LUKS is enabled.
 
+- **DEV_AUTOFILL auto-advance race condition** — Multiple screens have
+  _dev_auto_advance() via GLib.idle_add() which fires _on_next_cb() rapidly.
+  Because each screen rebuild creates a new on_next closure, multiple callbacks
+  can fire and corrupt _current_stage. Currently all _dev_auto_advance hooks
+  are present in the code but the auto-advance behaviour is unreliable.
+  The manual click path works correctly when dry_run=False.
+  Fix needed: centralize auto-advance in main.py _go_to_stage() instead of
+  per-screen GLib.idle_add() calls.
+
+- **Non-GRUB bootloaders** — systemd-boot, rEFInd, EFIStub, and UKI have all
+  been rewritten with correct helper functions (_get_root_partuuid,
+  _build_root_options, _get_efi_part_info etc.) but have not been confirmed
+  working yet due to the auto-advance debugging work consuming testing time.
+  Next session: test each bootloader with DEV_AUTOFILL + manual dry_run toggle.
+
 ---
 
 ## Custom ISO Build
@@ -388,3 +404,10 @@ arch-installer.service -> arch-installer-session
 | 18 | docs: update CLAUDE.md and README.md - session 18 |
 | 19 | fix(packages): replace FlowBox with HBox rows; 230x110px cards; label width constraints |
 | 19 | docs: update CLAUDE.md and README.md - session 19 |
+| 20 | feat(dev): DEV_AUTOFILL prefill system - state.py flag, dev_prefill.py, per-screen auto-advance |
+| 20 | fix(bootloaders): rewrite systemd-boot, rEFInd, EFIStub, UKI with helper functions |
+| 20 | fix(dev): confirm field pre-fill in users.py and system_config.py |
+| 20 | fix(dev): FALLBACK_MIRRORLIST used in dev_prefill; mirrors screen skips fetch |
+| 20 | fix(dev): _build_auto_layout called in dev_prefill to pre-populate state.partitions |
+| 20 | debug(dev): base_screen _nav_ready guard identified; auto-advance race condition found |
+| 20 | docs: update CLAUDE.md and README.md - session 20 |

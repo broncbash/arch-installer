@@ -62,6 +62,12 @@ class MirrorScreen(BaseScreen):
 
         self.set_next_enabled(bool(state.mirrorlist))
 
+        # Dev autofill: skip mirror fetch, use fallback mirrorlist
+        from installer.state import DEV_AUTOFILL
+        if DEV_AUTOFILL and not state.mirrorlist:
+            state.mirrorlist = FALLBACK_MIRRORLIST
+            self.set_next_enabled(True)
+
     # ── Hints ─────────────────────────────────────────────────────────────────
 
     def get_hints(self) -> dict:

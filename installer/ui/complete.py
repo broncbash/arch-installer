@@ -334,6 +334,85 @@ def _step_initramfs(state) -> tuple:
     return True, "\n".join(logs)
 
 
+def _get_efi_dir(state) -> str:
+    """Return the ESP mountpoint as seen inside the chroot (e.g. /boot)."""
+    for p in state.partitions:
+        if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
+            return p.mountpoint
+    return "/boot"
+
+
+def _get_root_partuuid(state) -> str:
+    """Return the PARTUUID of the root partition, or empty string on failure."""
+    import subprocess as _sp
+    for p in state.partitions:
+        if p.mountpoint == "/":
+            try:
+                r = _sp.run(
+                    ["blkid", "-o", "value", "-s", "PARTUUID", p.device],
+                    capture_output=True, text=True, timeout=10
+                )
+                return r.stdout.strip()
+            except Exception:
+                return ""
+    return ""
+
+
+def _get_luks_uuid(state) -> str:
+    """Return the UUID of the LUKS block device, or empty string on failure."""
+    import subprocess as _sp
+    luks_block = getattr(state, "luks_block_device", "")
+    if not luks_block:
+        return ""
+    try:
+        r = _sp.run(
+            ["blkid", "-o", "value", "-s", "UUID", luks_block],
+            capture_output=True, text=True, timeout=10
+        )
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _build_root_options(state) -> str:
+    """
+    Build kernel command-line root= options.
+    Uses PARTUUID for reliability. Adds cryptdevice= when LUKS is active.
+    """
+    if state.dry_run:
+        return "root=PARTUUID=<dry-run> rw quiet splash"
+    if state.luks_passphrase:
+        luks_uuid = _get_luks_uuid(state)
+        if luks_uuid:
+            return (
+                f"cryptdevice=UUID={luks_uuid}:cryptroot "
+                f"root=/dev/mapper/cryptroot rw quiet splash"
+            )
+        return "root=/dev/mapper/cryptroot rw quiet splash"
+    partuuid = _get_root_partuuid(state)
+    if partuuid:
+        return f"root=PARTUUID={partuuid} rw quiet splash"
+    return "root=LABEL=root rw quiet splash"
+
+
+def _get_efi_part_info(state) -> tuple:
+    """
+    Return (disk, part_num_str, efi_dev) for the EFI partition.
+    e.g. ("/dev/sda", "1", "/dev/sda1")
+    """
+    import re as _re
+    efi_dev = getattr(state, "efi_partition", "")
+    if not efi_dev:
+        for p in state.partitions:
+            if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
+                efi_dev = p.device
+                break
+    disk = state.target_disk or ""
+    m = _re.search(r"(\d+)$", efi_dev)
+    part_num = m.group(1) if m else "1"
+    return disk, part_num, efi_dev
+
+
 def _step_bootloader(state) -> tuple:
     """Install the chosen bootloader."""
     bl = state.bootloader or "grub"
@@ -546,65 +625,118 @@ def _step_bootloader(state) -> tuple:
         logs.append(out)
 
     elif bl == "systemd-boot":
-        efi_dir = "/boot/efi"
-        for p in state.partitions:
-            if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
-                efi_dir = p.mountpoint
-                break
+        efi_dir = _get_efi_dir(state)
+        esp_host = f"{MOUNTPOINT}{efi_dir}"   # e.g. /mnt/boot
+
+        # bootctl install runs inside the chroot so it can write EFI vars.
+        # --esp-path is the correct modern flag (not the deprecated --path alias).
         ok, out = run_chroot(
-            ["bootctl", f"--path={efi_dir}", "install"],
+            ["bootctl", f"--esp-path={efi_dir}", "install"],
             state, description="bootctl install"
         )
         if not ok:
             return False, out
         logs.append(out)
 
-        # Write a basic loader.conf
-        ok, out = run_script(
-            f"mkdir -p {MOUNTPOINT}/boot/loader && "
-            f"printf 'default arch\\ntimeout 3\\n' "
-            f"> {MOUNTPOINT}/boot/loader/loader.conf",
-            state, "Write loader.conf"
-        )
-        if not ok:
-            return False, out
-        logs.append(out)
+        root_opts = _build_root_options(state)
 
-        # Write a loader entry for the installed kernel
-        ok, out = run_script(
-            f"mkdir -p {MOUNTPOINT}/boot/loader/entries && "
-            f"printf 'title   Arch Linux\\nlinux   /vmlinuz-linux\\n"
-            f"initrd  /initramfs-linux.img\\noptions root=LABEL=root rw\\n' "
-            f"> {MOUNTPOINT}/boot/loader/entries/arch.conf",
-            state, "Write arch.conf loader entry"
-        )
-        if not ok:
-            return False, out
-        logs.append(out)
+        # Detect installed microcode
+        microcode_line = ""
+        if not state.dry_run:
+            import os as _os
+            for uc in ("intel-ucode.img", "amd-ucode.img"):
+                if _os.path.exists(f"{MOUNTPOINT}/boot/{uc}"):
+                    microcode_line = f"initrd  /{uc}\n"
+                    break
+
+        # Write config files directly in Python to avoid shell escaping issues.
+        # loader.conf: 'default' must be the entry filename WITH .conf extension.
+        # Entry paths are relative to the ESP root; Beginner layout puts ESP at
+        # /boot so /vmlinuz-linux, /initramfs-linux.img are correct as-is.
+        if not state.dry_run:
+            import os as _os2
+            try:
+                _os2.makedirs(f"{esp_host}/loader/entries", exist_ok=True)
+
+                with open(f"{esp_host}/loader/loader.conf", "w") as f:
+                    f.write("default arch.conf\ntimeout 4\nconsole-mode max\n")
+                logs.append("Wrote loader.conf")
+
+                entry = (
+                    "title   Arch Linux\n"
+                    "linux   /vmlinuz-linux\n"
+                    + microcode_line +
+                    "initrd  /initramfs-linux.img\n"
+                    f"options {root_opts}\n"
+                )
+                with open(f"{esp_host}/loader/entries/arch.conf", "w") as f:
+                    f.write(entry)
+                logs.append(f"Wrote arch.conf (options: {root_opts})")
+            except OSError as e:
+                return False, f"Could not write systemd-boot config: {e}"
+        else:
+            logs.append("[dry run] Would write loader.conf and arch.conf")
 
     elif bl == "refind":
-        ok, out = run_chroot(
-            ["refind-install"],
-            state, description="refind-install"
+        # refind-install is a bash script that breaks when run inside arch-chroot
+        # because it sources helper scripts relative to its own path using process
+        # substitution that arch-chroot doesn't handle well.
+        # Correct approach: run it from the LIVE system with --root /mnt so it
+        # installs rEFInd into the target ESP without trying to chroot itself.
+        # The binary lives at /usr/bin/refind-install inside the new system.
+        ok, out = run_cmd(
+            [f"{MOUNTPOINT}/usr/bin/refind-install", "--root", MOUNTPOINT],
+            state, description="refind-install --root /mnt"
         )
         if not ok:
             return False, out
         logs.append(out)
 
+        # refind-install populates /boot/refind_linux.conf with kernel options
+        # from the LIVE system, not the installed system. Overwrite it with the
+        # correct options for the installed system.
+        root_opts = _build_root_options(state)
+        refind_conf = f"{MOUNTPOINT}/boot/refind_linux.conf"
+        if not state.dry_run:
+            import os as _os3
+            try:
+                with open(refind_conf, "w") as f:
+                    f.write(f'"Boot with standard options"  "{root_opts}"\n')
+                logs.append(f"Wrote refind_linux.conf (options: {root_opts})")
+            except OSError as e:
+                state.add_log(f"[warn] Could not write refind_linux.conf: {e}")
+
     elif bl == "efistub":
-        # Register the kernel directly in UEFI NVRAM via efibootmgr
-        efi = state.efi_partition or ""
-        disk = state.target_disk or ""
-        # Extract partition number (last digit(s))
-        part_num = "".join(filter(str.isdigit, efi.replace(disk, ""))) or "1"
+        # efibootmgr is installed into the NEW system by pacstrap.
+        # It must run via arch-chroot so it's found in /usr/bin/.
+        # EFI loader paths must use backslashes and be relative to the ESP root.
+        disk, part_num, _ = _get_efi_part_info(state)
+        if not disk:
+            return False, "Cannot determine target disk for EFIStub registration."
+
+        root_opts = _build_root_options(state)
+
+        # Detect microcode for initrd chain
+        microcode_initrd = ""
+        if not state.dry_run:
+            import os as _os4
+            for uc in ("intel-ucode.img", "amd-ucode.img"):
+                if _os4.path.exists(f"{MOUNTPOINT}/boot/{uc}"):
+                    microcode_initrd = f"initrd=\\{uc} "
+                    break
+
+        # --loader path uses backslashes and is relative to the ESP root.
+        # --unicode carries the full kernel command line including initrd= params.
+        unicode_opts = f"{root_opts} {microcode_initrd}initrd=\\initramfs-linux.img".strip()
+
         ok, out = run_chroot(
             ["efibootmgr",
              "--disk", disk,
              "--part", part_num,
              "--create",
              "--label", "Arch Linux",
-             "--loader", "/vmlinuz-linux",
-             "--unicode", "root=LABEL=root rw initrd=\\initramfs-linux.img"],
+             "--loader", "\\vmlinuz-linux",
+             "--unicode", unicode_opts],
             state, description="Register EFIStub entry via efibootmgr"
         )
         if not ok:
@@ -612,15 +744,84 @@ def _step_bootloader(state) -> tuple:
         logs.append(out)
 
     elif bl == "uki":
-        # Build UKI with ukify (or mkinitcpio --uki if ukify unavailable)
+        # Build a Unified Kernel Image: kernel + initramfs + cmdline in one .efi.
+        # Steps:
+        #   1. Create the output directory (mkinitcpio won't create it itself)
+        #   2. Write /etc/kernel/cmdline (mkinitcpio reads this for UKI cmdline)
+        #   3. Patch linux.preset to set default_uki= output path
+        #   4. Run mkinitcpio -p linux inside chroot
+        #   5. Register the .efi with efibootmgr inside chroot
+
+        import os as _os5
+
+        uki_efi_path = "/boot/EFI/Linux/arch-linux.efi"   # inside chroot
+        uki_host_dir = f"{MOUNTPOINT}/boot/EFI/Linux"
+
+        # 1. Create output directory
+        if not state.dry_run:
+            try:
+                _os5.makedirs(uki_host_dir, exist_ok=True)
+                logs.append(f"Created {uki_host_dir}")
+            except OSError as e:
+                return False, f"Could not create UKI output directory: {e}"
+
+        root_opts = _build_root_options(state)
+
+        # 2. Write /etc/kernel/cmdline — embedded into the UKI by mkinitcpio
+        if not state.dry_run:
+            try:
+                _os5.makedirs(f"{MOUNTPOINT}/etc/kernel", exist_ok=True)
+                with open(f"{MOUNTPOINT}/etc/kernel/cmdline", "w") as f:
+                    f.write(root_opts + "\n")
+                logs.append(f"Wrote /etc/kernel/cmdline: {root_opts}")
+            except OSError as e:
+                return False, f"Could not write /etc/kernel/cmdline: {e}"
+
+        # 3. Patch linux.preset to enable UKI output
+        if not state.dry_run:
+            preset_path = f"{MOUNTPOINT}/etc/mkinitcpio.d/linux.preset"
+            try:
+                with open(preset_path) as f:
+                    preset = f.read()
+                import re as _re2
+                # Ensure ALL_kver points to the kernel
+                if "ALL_kver=" not in preset:
+                    preset += "\nALL_kver=/boot/vmlinuz-linux\n"
+                # Set default_uki= output path (add or replace/uncomment)
+                uki_line = f'default_uki="{uki_efi_path}"'
+                if "default_uki=" in preset:
+                    preset = _re2.sub(r'#?\s*default_uki=.*', uki_line, preset)
+                else:
+                    preset += f"\n{uki_line}\n"
+                with open(preset_path, "w") as f:
+                    f.write(preset)
+                logs.append("Patched linux.preset for UKI output")
+            except OSError as e:
+                return False, f"Could not patch linux.preset: {e}"
+
+        # 4. Build the UKI
         ok, out = run_chroot(
-            ["mkinitcpio", "-p", "linux", "--uki",
-             "/boot/EFI/Linux/arch-linux.efi"],
-            state, description="Build Unified Kernel Image"
+            ["mkinitcpio", "-p", "linux"],
+            state, description="Build Unified Kernel Image (mkinitcpio -p linux)"
         )
         if not ok:
             return False, out
         logs.append(out)
+
+        # 5. Register with efibootmgr (inside chroot — efibootmgr is in new system)
+        disk, part_num, _ = _get_efi_part_info(state)
+        if disk:
+            ok2, out2 = run_chroot(
+                ["efibootmgr",
+                 "--disk", disk,
+                 "--part", part_num,
+                 "--create",
+                 "--label", "Arch Linux (UKI)",
+                 "--loader", "\\EFI\\Linux\\arch-linux.efi"],
+                state, description="Register UKI with efibootmgr"
+            )
+            if out2:
+                logs.append(out2)
 
     else:
         return False, f"Unknown bootloader: {bl}"

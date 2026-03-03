@@ -62,6 +62,14 @@ class MirrorScreen(BaseScreen):
 
         self.set_next_enabled(bool(state.mirrorlist))
 
+        # Dev autofill: skip mirror fetch, use fallback, auto-advance
+        from installer.state import DEV_AUTOFILL
+        if DEV_AUTOFILL and not state.mirrorlist:
+            state.mirrorlist = FALLBACK_MIRRORLIST
+            self.set_next_enabled(True)
+        if DEV_AUTOFILL:
+            GLib.idle_add(self._dev_auto_advance)
+
     # ── Hints ─────────────────────────────────────────────────────────────────
 
     def get_hints(self) -> dict:
@@ -501,6 +509,15 @@ class MirrorScreen(BaseScreen):
         self.set_next_enabled(True)
 
     # ── Validate and save ─────────────────────────────────────────────────────
+
+    def _dev_auto_advance(self):
+        """Auto-click Next when DEV_AUTOFILL is active."""
+        if hasattr(self, 'next_btn') and self.next_btn.get_sensitive():
+            ok, _ = self.validate()
+            if ok:
+                self.on_next()
+                self._on_next_cb()   # BaseScreen stores the on_next callback here
+        return False
 
     def validate(self):
         if not self.state.mirrorlist:

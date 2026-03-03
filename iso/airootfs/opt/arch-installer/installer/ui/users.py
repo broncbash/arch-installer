@@ -97,6 +97,11 @@ class UsersScreen(BaseScreen):
         self.set_next_enabled(False)
         GLib.idle_add(self._apply_level_visibility)
 
+        # Dev autofill: auto-advance once widgets are ready and validated
+        from installer.state import DEV_AUTOFILL
+        if DEV_AUTOFILL and self.state.users:
+            GLib.idle_add(self._dev_auto_advance)
+
     # ── Hints ─────────────────────────────────────────────────────────────────
 
     def get_hints(self) -> dict:
@@ -269,6 +274,7 @@ class UsersScreen(BaseScreen):
         confirm_entry.set_visibility(False)
         confirm_entry.set_placeholder_text("Confirm password")
         confirm_entry.set_hexpand(True)
+        confirm_entry.set_text(password)   # pre-fill confirm to match password
         confirm_entry.connect("changed", lambda e: self._validate_all())
         widgets["confirm"] = confirm_entry
         confirm_row.pack_start(confirm_entry, True, True, 0)
@@ -491,6 +497,17 @@ class UsersScreen(BaseScreen):
 
         if hasattr(self, 'next_btn'):
             self.set_next_enabled(all_ok and len(self._user_form_widgets) > 0)
+
+    def _dev_auto_advance(self):
+        """Auto-click Next when DEV_AUTOFILL is active."""
+        if hasattr(self, '_validate_all'):
+            self._validate_all()
+        if hasattr(self, 'next_btn') and self.next_btn.get_sensitive():
+            ok, _ = self.validate()
+            if ok:
+                self.on_next()
+                self._on_next_cb()   # BaseScreen stores the on_next callback here
+        return False
 
     def validate(self):
         if not self._user_form_widgets:

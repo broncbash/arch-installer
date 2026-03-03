@@ -9,6 +9,13 @@ Nothing is written to disk until the user confirms on the Review screen.
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict
 
+# ── Developer test flag ───────────────────────────────────────────────────────
+# Set to True to skip manual data entry during bootloader testing.
+# All screens will be pre-populated with defaults from installer/dev_prefill.py.
+# Flip back to False (or delete this flag + dev_prefill.py) when done.
+DEV_AUTOFILL: bool = True
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class DiskPartition:

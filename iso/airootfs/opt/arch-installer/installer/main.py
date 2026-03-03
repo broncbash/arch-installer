@@ -11,7 +11,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, GdkPixbuf
 
 from installer.privilege import require_root
-from installer.state import InstallState
+from installer.state import InstallState, DEV_AUTOFILL
 from installer.ui.welcome import WelcomeScreen
 from installer.ui.network import NetworkScreen
 from installer.ui.keyboard import KeyboardScreen
@@ -261,6 +261,12 @@ def main():
     require_root()
     _load_css()
     state = InstallState()
+
+    # Developer shortcut — pre-fill all screens for bootloader testing.
+    # Controlled by DEV_AUTOFILL in installer/state.py.
+    if DEV_AUTOFILL:
+        from installer.dev_prefill import apply as _prefill
+        _prefill(state)
     win = InstallerWindow(state)
     Gtk.main()
 

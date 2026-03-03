@@ -269,6 +269,7 @@ class UsersScreen(BaseScreen):
         confirm_entry.set_visibility(False)
         confirm_entry.set_placeholder_text("Confirm password")
         confirm_entry.set_hexpand(True)
+        confirm_entry.set_text(password)   # pre-fill confirm to match password
         confirm_entry.connect("changed", lambda e: self._validate_all())
         widgets["confirm"] = confirm_entry
         confirm_row.pack_start(confirm_entry, True, True, 0)

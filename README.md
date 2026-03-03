@@ -14,7 +14,8 @@
 
 > ⚠️ **This project is in active development and not yet ready for use on real hardware.**
 > End-to-end VM installs are working. LUKS encryption, Plymouth boot splash, and
-> post-install configuration are functional. A small number of known issues remain
+> post-install configuration are functional. A developer autofill system has been
+> added to speed up bootloader testing. A small number of known issues remain
 > (see below).
 
 ---
@@ -89,6 +90,12 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
   LUKS, GRUB asks for the passphrase before showing the boot menu because `/boot`
   lives inside the encrypted root partition. A separate `/boot` partition in the
   auto layout will fix this in a future session.
+- **DEV_AUTOFILL auto-advance** — per-screen auto-advance hooks are in place but
+  have a race condition due to multiple GLib closure callbacks firing on rapid
+  screen transitions. Manual click-through works correctly. Fix planned for next
+  session.
+- **Non-GRUB bootloaders** — rewritten with correct helper functions but not yet
+  confirmed working. Testing in progress.
 
 ---
 
