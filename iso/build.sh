@@ -118,17 +118,31 @@ info "  Work dir: $WORK_DIR"
 info "  Out dir : $OUT_DIR"
 echo ""
 
-mkarchiso \
-    -v \
-    -w "$WORK_DIR" \
-    -o "$OUT_DIR" \
-    "$PROFILE_DIR"
+# Record build start time to find the resulting ISO later
+BUILD_START_TIME=$(date +%s)
+
+if ! mkarchiso -v -w "$WORK_DIR" -o "$OUT_DIR" "$PROFILE_DIR"; then
+    error "mkarchiso failed."
+    warn "Try running with --clean if you're seeing unexpected errors."
+    exit 1
+fi
 
 # ── Find the output ISO ────────────────────────────────────────────────────────
-ISO_FILE=$(find "$OUT_DIR" -name "*.iso" -newer "$PROFILE_DIR/profiledef.sh" | sort | tail -1)
+# Find the newest .iso file in OUT_DIR that was created during or after this build
+ISO_FILE=$(find "$OUT_DIR" -name "*.iso" -type f -printf "%T@ %p\n" | sort -rn | head -1 | cut -d' ' -f2-)
+
+# Sanity check: is it actually a new file?
+if [[ -n "$ISO_FILE" ]]; then
+    FILE_TIME=$(date -r "$ISO_FILE" +%s)
+    if (( FILE_TIME < BUILD_START_TIME )); then
+        ISO_FILE=""
+    fi
+fi
 
 if [[ -z "$ISO_FILE" ]]; then
-    error "Build may have succeeded but no ISO found in $OUT_DIR"
+    error "mkarchiso reported success but no NEW ISO was found in $OUT_DIR"
+    warn "This often happens if mkarchiso skipped steps because the work directory was already populated."
+    warn "Try building with --clean: sudo ./build.sh --clean"
     exit 1
 fi
 

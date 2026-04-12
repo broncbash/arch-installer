@@ -13,7 +13,7 @@ from typing import Optional, List, Dict
 # Set to True to skip manual data entry during bootloader testing.
 # All screens will be pre-populated with defaults from installer/dev_prefill.py.
 # Flip back to False (or delete this flag + dev_prefill.py) when done.
-DEV_AUTOFILL: bool = True
+DEV_AUTOFILL: bool = False
 # ─────────────────────────────────────────────────────────────────────────────
 
 
