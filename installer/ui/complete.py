@@ -131,15 +131,21 @@ fun display_password_callback(prompt, bullets)
 {
     screen_w = Window.GetWidth();
     screen_h = Window.GetHeight();
-    box_w = 400;
+
+    label_img = Image.Text(prompt, 0.88, 0.88, 0.88);
+
+    // Auto-size box based on prompt width, but with a minimum
+    box_w = label_img.GetWidth() + 32;
+    if (box_w < 400) box_w = 400;
+    if (box_w > screen_w - 40) box_w = screen_w - 40;
+
     box_h = 90;
     box_x = screen_w / 2 - box_w / 2;
     box_y = Math.Int(screen_h * 0.62);
 
-    label_img = Image.Text(prompt, 0.88, 0.88, 0.88);
     password_label.SetImage(label_img);
-    password_label.SetX(box_x);
-    password_label.SetY(box_y - label_img.GetHeight() - 8);
+    password_label.SetX(screen_w / 2 - label_img.GetWidth() / 2);
+    password_label.SetY(box_y - label_img.GetHeight() - 12);
     password_label.SetOpacity(1);
 
     box_img = Image.New(box_w, box_h);
@@ -159,7 +165,15 @@ fun display_password_callback(prompt, bullets)
     if (bullets == 0) { bullet_str = "Enter passphrase..."; }
     bullet_img = Image.Text(bullet_str, 0.36, 0.78, 0.94);
     password_text.SetImage(bullet_img);
-    password_text.SetX(box_x + 16);
+
+    // Center bullets if they are short, or left-align if they get long
+    bullet_w = bullet_img.GetWidth();
+    if (bullet_w < box_w - 32) {
+        password_text.SetX(screen_w / 2 - bullet_w / 2);
+    } else {
+        password_text.SetX(box_x + 16);
+    }
+
     password_text.SetY(box_y + box_h / 2 - bullet_img.GetHeight() / 2);
     password_text.SetOpacity(1);
 }
