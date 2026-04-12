@@ -49,6 +49,7 @@ pacman-contrib
 python
 python-pip
 python-pillow
+python-pytz
 
 # ── GTK3 + GObject / Cairo ────────────────────────────────────────────────────
 gtk3
@@ -58,7 +59,7 @@ gobject-introspection
 glib2
 
 # ── WebKit2GTK (wiki viewer panel) ────────────────────────────────────────────
-webkit2gtk
+webkit2gtk-4.1
 
 # ── Xorg ─────────────────────────────────────────────────────────────────────
 xorg-server
