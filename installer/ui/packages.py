@@ -123,7 +123,7 @@ DE_OPTIONS = [
                     "Extremely stable, well-documented, huge community. "
                     "Config file driven. Great starting point for tiling WMs.",
         "packages": ["i3-wm", "i3status", "i3lock", "dmenu",
-                     "xterm", "picom", "feh", "dunst",
+                     "rxvt-unicode", "xterm", "picom", "feh", "dunst",
                      "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
     },
@@ -135,7 +135,7 @@ DE_OPTIONS = [
         "desc":     "Tiling WM that represents windows as leaves of a binary "
                     "tree. Controlled entirely via sxhkd hotkey daemon and "
                     "shell scripts. Extremely flexible, steeper learning curve.",
-        "packages": ["bspwm", "sxhkd", "dmenu", "xterm",
+        "packages": ["bspwm", "sxhkd", "dmenu", "rxvt-unicode", "xterm",
                      "picom", "feh", "dunst", "polybar",
                      "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
@@ -353,11 +353,11 @@ class PackageScreen(BaseScreen):
     def _build_de_section(self) -> Gtk.Widget:
         # set_size_request is necessary because GTK3 ScrolledWindow always
         # allocates its child the full viewport width, ignoring halign/hexpand.
-        # 560px fits 4 cards (130px + 6px gap each) with room to spare.
+        # 750px fits 3 cards (236px + 6px gap each) perfectly.
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_start(14)
@@ -408,7 +408,7 @@ class PackageScreen(BaseScreen):
         eb = Gtk.EventBox()
         eb.get_style_context().add_class("level-card")
         # Fixed size — prevents FlowBox from stretching cards to fill row width
-        eb.set_size_request(230, 110)
+        eb.set_size_request(236, 110)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
@@ -505,7 +505,7 @@ class PackageScreen(BaseScreen):
         frame.get_style_context().add_class("card")
         frame.set_hexpand(False)
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)
@@ -600,7 +600,7 @@ class PackageScreen(BaseScreen):
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)

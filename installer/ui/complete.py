@@ -131,15 +131,21 @@ fun display_password_callback(prompt, bullets)
 {
     screen_w = Window.GetWidth();
     screen_h = Window.GetHeight();
-    box_w = 400;
+
+    label_img = Image.Text(prompt, 0.88, 0.88, 0.88);
+
+    // Auto-size box based on prompt width, but with a minimum
+    box_w = label_img.GetWidth() + 32;
+    if (box_w < 400) box_w = 400;
+    if (box_w > screen_w - 40) box_w = screen_w - 40;
+
     box_h = 90;
     box_x = screen_w / 2 - box_w / 2;
     box_y = Math.Int(screen_h * 0.62);
 
-    label_img = Image.Text(prompt, 0.88, 0.88, 0.88);
     password_label.SetImage(label_img);
-    password_label.SetX(box_x);
-    password_label.SetY(box_y - label_img.GetHeight() - 8);
+    password_label.SetX(screen_w / 2 - label_img.GetWidth() / 2);
+    password_label.SetY(box_y - label_img.GetHeight() - 12);
     password_label.SetOpacity(1);
 
     box_img = Image.New(box_w, box_h);
@@ -159,7 +165,15 @@ fun display_password_callback(prompt, bullets)
     if (bullets == 0) { bullet_str = "Enter passphrase..."; }
     bullet_img = Image.Text(bullet_str, 0.36, 0.78, 0.94);
     password_text.SetImage(bullet_img);
-    password_text.SetX(box_x + 16);
+
+    // Center bullets if they are short, or left-align if they get long
+    bullet_w = bullet_img.GetWidth();
+    if (bullet_w < box_w - 32) {
+        password_text.SetX(screen_w / 2 - bullet_w / 2);
+    } else {
+        password_text.SetX(box_x + 16);
+    }
+
     password_text.SetY(box_y + box_h / 2 - bullet_img.GetHeight() / 2);
     password_text.SetOpacity(1);
 }
@@ -301,10 +315,27 @@ def _step_initramfs(state) -> tuple:
                         idx = hooks.index("udev")
                         hooks.insert(idx + 1, "plymouth")
 
-                    # Add 'encrypt' after 'block' only when LUKS is used
-                    if has_luks and "encrypt" not in hooks and "block" in hooks:
-                        idx = hooks.index("block")
-                        hooks.insert(idx + 1, "encrypt")
+                    # LUKS hooks
+                    if has_luks and "encrypt" not in hooks and "sd-encrypt" not in hooks:
+                        # Use systemd-based sd-encrypt if the 'systemd' hook is present
+                        enc_hook = "sd-encrypt" if "systemd" in hooks else "encrypt"
+
+                        # Move keymap/keyboard early so they work for passphrase input
+                        for h in ["keymap", "keyboard"]:
+                            if h in hooks:
+                                hooks.remove(h)
+
+                        # Standard mkinitcpio setup needs keyboard/keymap before encrypt
+                        # so the user can type their passphrase!
+                        base_idx = hooks.index("autodetect") if "autodetect" in hooks else 0
+                        hooks.insert(base_idx + 1, "keymap")
+                        hooks.insert(base_idx + 2, "keyboard")
+
+                        # Place encryption hook before filesystems (crucial for mounting root)
+                        if "filesystems" in hooks:
+                            hooks.insert(hooks.index("filesystems"), enc_hook)
+                        else:
+                            hooks.append(enc_hook)
 
                     return f"HOOKS=({' '.join(hooks)})"
 
@@ -377,18 +408,25 @@ def _get_luks_uuid(state) -> str:
 def _build_root_options(state) -> str:
     """
     Build kernel command-line root= options.
-    Uses PARTUUID for reliability. Adds cryptdevice= when LUKS is active.
+    Uses PARTUUID for reliability. Adds cryptdevice= and rd.luks.uuid= when LUKS is active.
     """
     if state.dry_run:
         return "root=PARTUUID=<dry-run> rw quiet splash"
+
     if state.luks_passphrase:
         luks_uuid = _get_luks_uuid(state)
         if luks_uuid:
+            # We add both cryptdevice (for 'encrypt' hook) and rd.luks.name (for 'sd-encrypt' or dracut)
+            # to be safe across different initramfs generators.
+            # rd.luks.name=<UUID>=<name> ensures the mapper device is named 'cryptroot'
+            # which matches our root= parameter and fstab.
             return (
                 f"cryptdevice=UUID={luks_uuid}:cryptroot "
+                f"rd.luks.name={luks_uuid}=cryptroot "
                 f"root=/dev/mapper/cryptroot rw quiet splash"
             )
         return "root=/dev/mapper/cryptroot rw quiet splash"
+
     partuuid = _get_root_partuuid(state)
     if partuuid:
         return f"root=PARTUUID={partuuid} rw quiet splash"
@@ -472,7 +510,12 @@ def _step_bootloader(state) -> tuple:
 
                     # 3. Set cryptdevice= and root= kernel parameters
                     if luks_uuid:
-                        crypt_param = f"cryptdevice=UUID={luks_uuid}:cryptroot root=/dev/mapper/cryptroot"
+                        # Ensure we use the SAME options as systemd-boot for consistency
+                        crypt_param = (
+                            f"cryptdevice=UUID={luks_uuid}:cryptroot "
+                            f"rd.luks.name={luks_uuid}=cryptroot "
+                            f"root=/dev/mapper/cryptroot"
+                        )
                         if "GRUB_CMDLINE_LINUX=" in grub_txt:
                             grub_txt = _re.sub(
                                 r'GRUB_CMDLINE_LINUX="[^"]*"',

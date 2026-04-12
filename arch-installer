@@ -32,8 +32,9 @@ DEPS=(
     python
     python-gobject
     python-cairo
+    python-pytz
     gtk3
-    webkit2gtk
+    webkit2gtk-4.1
     gobject-introspection
 )
 

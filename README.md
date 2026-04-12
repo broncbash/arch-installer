@@ -99,21 +99,80 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
 
 ---
 
-## Custom ISO
+## Detailed ISO Build Guide
 
-Includes a full archiso profile that builds a bootable ISO with the GTK installer
-launching automatically on boot.
+The project includes an `archiso` profile and a helper script to build a bootable ISO that launches the installer automatically on boot. Follow these steps to create your own installer media.
 
-### Build
+### 1. Preparation (Arch Linux only)
 
+Building the ISO **requires a running Arch Linux system**. You cannot build it from Windows, macOS, or other Linux distributions.
+
+Install the necessary build tools:
 ```bash
-sudo mkarchiso -v \
-  -w /tmp/archiso-work \
-  -o /path/to/arch-installer/iso/out \
-  /path/to/arch-installer/iso
+sudo pacman -S archiso rsync
 ```
 
-`build.sh` syncs the installer source into the ISO airootfs automatically before building.
+If you plan to test your ISO in a virtual machine (recommended), also install these:
+```bash
+sudo pacman -S qemu-desktop edk2-ovmf
+```
+
+### 2. Build the ISO
+
+The easiest way to build is using the provided `build.sh` script. This script automatically performs several important tasks:
+- It excludes development files (like `.git`) to keep the ISO small.
+- It syncs the latest installer code into the ISO's internal filesystem.
+- It runs the `mkarchiso` tool with the correct parameters.
+
+**Run the build script:**
+```bash
+cd arch-installer/iso/
+sudo ./build.sh
+```
+
+- **Wait for completion**: This can take 5-10 minutes depending on your CPU and internet speed.
+- **Result**: Once finished, your bootable file will be in `iso/out/` (e.g., `arch-installer-2025.01.20-x86_64.iso`).
+
+> **Troubleshooting "Done!" without output**: If `mkarchiso` finishes immediately
+> and reports "Done!" but no new ISO is created in `iso/out`, it means its build
+> cache is out of sync. **Run `sudo ./build.sh --clean`** to clear the cache and
+> force a fresh build.
+
+### 3. Verification & Testing
+
+Before writing to a USB drive, it is highly recommended to test the ISO in a virtual machine:
+
+```bash
+# This will build (if needed) and then launch the ISO in QEMU
+sudo ./build.sh --vm-test
+```
+
+### 4. Create Bootable Media (USB)
+
+Once you have your `.iso` file, you can write it to a USB drive. **Warning: This will erase all data on the USB drive.**
+
+1. Insert your USB drive.
+2. Find its device name (e.g., `/dev/sdX` or `/dev/nvmeXn1`) using `lsblk`.
+3. Write the image using `dd`:
+
+```bash
+# Replace /dev/sdX with your actual USB device path
+sudo dd bs=4M if=out/arch-installer-xxxx.xx.xx-x86_64.iso of=/dev/sdX conv=fsync oflag=direct status=progress
+```
+
+---
+
+## Manual Build (Advanced)
+
+If you prefer to run `mkarchiso` manually without the helper script, you **must first sync the installer source** into the profile's internal filesystem (`airootfs`):
+
+```bash
+# 1. From the repository root, sync the code
+sudo rsync -a --exclude='iso/' --exclude='.git' --exclude='__pycache__' . iso/airootfs/opt/arch-installer/
+
+# 2. Run the build tool
+sudo mkarchiso -v -w /tmp/archiso-work -o ./iso/out ./iso
+```
 
 ### Boot sequence
 
