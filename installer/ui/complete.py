@@ -315,40 +315,23 @@ def _step_initramfs(state) -> tuple:
                         idx = hooks.index("udev")
                         hooks.insert(idx + 1, "plymouth")
 
-                    # LUKS hooks
+                    # LUKS hooks: ensure keyboard/keymap are early and before encryption
                     if has_luks and "encrypt" not in hooks and "sd-encrypt" not in hooks:
                         # Use systemd-based sd-encrypt if the 'systemd' hook is present
                         enc_hook = "sd-encrypt" if "systemd" in hooks else "encrypt"
 
-                        # Move keymap/keyboard early so they work for passphrase input
+                        # Move/ensure keymap and keyboard are before the encryption hook
                         for h in ["keymap", "keyboard"]:
                             if h in hooks:
                                 hooks.remove(h)
 
-                        # Standard mkinitcpio setup needs keyboard/keymap before encrypt
-                        # so the user can type their passphrase!
                         base_idx = hooks.index("autodetect") if "autodetect" in hooks else 0
                         hooks.insert(base_idx + 1, "keymap")
                         hooks.insert(base_idx + 2, "keyboard")
 
-                        # Place encryption hook before filesystems (crucial for mounting root)
-                        if "filesystems" in hooks:
-                            hooks.insert(hooks.index("filesystems"), enc_hook)
-                        else:
-                            hooks.append(enc_hook)
-                    # Add 'encrypt' after 'keyboard' only when LUKS is used.
-                    # We need 'keyboard' and 'keymap' before 'encrypt' so the
-                    # user can actually type their passphrase!
-                    if has_luks and "encrypt" not in hooks:
-                        # Ensure keymap and keyboard are present
-                        if "keymap" not in hooks:
-                            hooks.insert(hooks.index("autodetect") + 1, "keymap")
-                        if "keyboard" not in hooks:
-                            hooks.insert(hooks.index("keymap") + 1, "keyboard")
-
-                        # Insert encrypt after keyboard
+                        # Place encryption hook after keyboard (and before filesystems)
                         idx = hooks.index("keyboard")
-                        hooks.insert(idx + 1, "encrypt")
+                        hooks.insert(idx + 1, enc_hook)
 
                     return f"HOOKS=({' '.join(hooks)})"
 
@@ -429,14 +412,14 @@ def _build_root_options(state) -> str:
     if state.luks_passphrase:
         luks_uuid = _get_luks_uuid(state)
         if luks_uuid:
-            # We add both cryptdevice (for 'encrypt' hook) and rd.luks.uuid (for 'sd-encrypt' or dracut)
-            # to be safe across different initramfs generators.
+            # We add cryptdevice (for 'encrypt' hook) and rd.luks.name (for 'sd-encrypt' or dracut)
+            # using 'root' as the mapper name to ensure the device maps to /dev/mapper/root.
             return (
-                f"cryptdevice=UUID={luks_uuid}:cryptroot "
-                f"rd.luks.uuid={luks_uuid} "
-                f"root=/dev/mapper/cryptroot rw quiet splash"
+                f"cryptdevice=UUID={luks_uuid}:root "
+                f"rd.luks.name={luks_uuid}=root "
+                f"root=/dev/mapper/root rw quiet splash"
             )
-        return "root=/dev/mapper/cryptroot rw quiet splash"
+        return "root=/dev/mapper/root rw quiet splash"
 
     partuuid = _get_root_partuuid(state)
     if partuuid:
@@ -523,9 +506,9 @@ def _step_bootloader(state) -> tuple:
                     if luks_uuid:
                         # Ensure we use the SAME options as systemd-boot for consistency
                         crypt_param = (
-                            f"cryptdevice=UUID={luks_uuid}:cryptroot "
-                            f"rd.luks.uuid={luks_uuid} "
-                            f"root=/dev/mapper/cryptroot"
+                            f"cryptdevice=UUID={luks_uuid}:root "
+                            f"rd.luks.name={luks_uuid}=root "
+                            f"root=/dev/mapper/root"
                         )
                         if "GRUB_CMDLINE_LINUX=" in grub_txt:
                             grub_txt = _re.sub(
@@ -535,7 +518,7 @@ def _step_bootloader(state) -> tuple:
                             )
                         else:
                             grub_txt += f'\nGRUB_CMDLINE_LINUX="{crypt_param}"\n'
-                        logs.append(f"Set cryptdevice=UUID={luks_uuid}:cryptroot")
+                        logs.append(f"Set cryptdevice=UUID={luks_uuid}:root")
 
                     # 4. Create a keyfile so GRUB only asks once (not twice).
                     #    GRUB_ENABLE_CRYPTODISK=y makes GRUB ask for passphrase

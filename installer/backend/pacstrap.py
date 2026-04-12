@@ -276,11 +276,14 @@ def _step_luks(state) -> tuple:
         logs.append(out)
 
         # Open the LUKS container
-        # Use consistent "cryptroot" / "crypthome" names so GRUB's
-        # cryptdevice=UUID:cryptroot kernel param always matches
+        # Use consistent mapper names: 'root' for / and 'crypthome' for /home.
+        # This ensures rd.luks.name=UUID=root maps correctly to /dev/mapper/root.
         original_device = p.device  # save before p.device is overwritten below
         mp_clean = p.mountpoint.strip("/").replace("/", "_") or "root"
-        mapper_name = f"crypt{mp_clean}"   # e.g. cryptroot, crypthome
+        if mp_clean == "root":
+            mapper_name = "root"
+        else:
+            mapper_name = f"crypt{mp_clean}"
         ok, out = run_cmd(
             ["bash", "-c",
              f"echo -n '{state.luks_passphrase}' | "
