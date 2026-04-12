@@ -101,19 +101,48 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
 
 ## Custom ISO
 
-Includes a full archiso profile that builds a bootable ISO with the GTK installer
-launching automatically on boot.
+The project includes an `archiso` profile and a helper script to build a bootable ISO that launches the installer automatically on boot.
 
-### Build
+### Prerequisites
+
+To build the ISO, you must be running Arch Linux and have the `archiso` package installed:
 
 ```bash
-sudo mkarchiso -v \
-  -w /tmp/archiso-work \
-  -o /path/to/arch-installer/iso/out \
-  /path/to/arch-installer/iso
+sudo pacman -S archiso
 ```
 
-`build.sh` syncs the installer source into the ISO airootfs automatically before building.
+### Build with `build.sh` (Recommended)
+
+The easiest way to build the ISO is using the provided `build.sh` script. It handles syncing the latest installer code into the ISO filesystem and calling `mkarchiso` with the correct paths.
+
+```bash
+cd iso/
+sudo ./build.sh
+```
+
+- **Output**: The finished ISO will be in `iso/out/`.
+- **Clean Build**: Use `sudo ./build.sh --clean` to wipe previous build artifacts before starting.
+
+### Testing the ISO
+
+You can automatically build and then launch the resulting ISO in a QEMU virtual machine for testing:
+
+```bash
+sudo ./build.sh --vm-test
+```
+*(Requires `qemu-desktop` and `edk2-ovmf` for UEFI testing.)*
+
+### Manual Build
+
+If you prefer to run `mkarchiso` manually, you **must first sync the installer source** into the profile's airootfs:
+
+```bash
+# From the repository root
+sudo rsync -a --exclude='iso/' --exclude='.git' . iso/airootfs/opt/arch-installer/
+
+# Then run mkarchiso
+sudo mkarchiso -v -w /tmp/archiso-work -o ./iso/out ./iso
+```
 
 ### Boot sequence
 
