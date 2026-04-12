@@ -660,6 +660,30 @@ def _step_users(state) -> tuple:
                 return False, out
             logs.append(out)
 
+        # ── Post-user-creation environment setup ──────────────────────────────
+        # Run xdg-user-dirs-update to create standard folders (Downloads, etc.)
+        run_chroot(["sudo", "-u", uname, "xdg-user-dirs-update"], state, mountpoint=MOUNTPOINT)
+
+        # Copy default configs for Tiling WMs if selected
+        selected_des = (state.desktop_environment or "").split(",")
+        extra_pkgs = state.extra_packages
+
+        def _copy_cfg(src, dst_dir, dst_file):
+            chroot_dst = f"/home/{uname}/.config/{dst_dir}"
+            run_chroot(["mkdir", "-p", chroot_dst], state, mountpoint=MOUNTPOINT)
+            # Use cp -f inside chroot
+            run_chroot(["cp", "-f", src, f"{chroot_dst}/{dst_file}"], state, mountpoint=MOUNTPOINT)
+            run_chroot(["chown", "-R", f"{uname}:{uname}", f"/home/{uname}/.config"], state, mountpoint=MOUNTPOINT)
+            run_chroot(["chmod", "+x", f"{chroot_dst}/{dst_file}"], state, mountpoint=MOUNTPOINT)
+
+        if "i3" in selected_des or "i3-wm" in extra_pkgs:
+            _copy_cfg("/etc/i3/config", "i3", "config")
+
+        if "bspwm" in selected_des or "bspwm" in extra_pkgs:
+            # Arch bspwm package puts examples in /usr/share/doc/bspwm/examples/
+            _copy_cfg("/usr/share/doc/bspwm/examples/bspwmrc", "bspwm", "bspwmrc")
+            _copy_cfg("/usr/share/doc/bspwm/examples/sxhkdrc", "sxhkd", "sxhkdrc")
+
         logs.append(f"Created user: {uname} (shell={shell}, sudo={sudo})")
 
     return True, "\n".join(logs)
@@ -672,6 +696,10 @@ def build_package_list(state) -> list:
     # networkmanager — all lowercase, this is the correct Arch package name
     if state.network_manager and state.network_manager not in packages:
         packages.append(state.network_manager)
+
+    # Standard user directory management
+    if "xdg-user-dirs" not in packages:
+        packages.append("xdg-user-dirs")
 
     packages.extend(state.extra_packages)
 
