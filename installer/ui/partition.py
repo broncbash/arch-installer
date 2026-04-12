@@ -699,11 +699,12 @@ def _build_auto_layout(disk_mb: int, boot_mode: str,
     Build the automatic partition layout as a list of DiskPartition objects.
 
     UEFI layout:
-        /boot/efi   vfat   512MB
+        /boot       vfat   512MB     (ESP)
         swap        swap   swap_mb   (if swap_type == 'partition')
         /           ext4   rest
 
     BIOS layout:
+        /boot       ext4   512MB
         swap        swap   swap_mb   (if swap_type == 'partition')
         /           ext4   rest
 
@@ -713,21 +714,22 @@ def _build_auto_layout(disk_mb: int, boot_mode: str,
     partitions = []
 
     if boot_mode == "uefi":
+        # For UEFI, we mount the ESP at /boot. This is the simplest layout for
+        # systemd-boot as it places kernels/initrd directly on the ESP.
         partitions.append(DiskPartition(
             device="",           # filled in at install time
-            mountpoint="/boot/efi",
+            mountpoint="/boot",
             filesystem="vfat",
             size_mb=EFI_SIZE_MB,
         ))
-
-    # Always include a separate /boot partition.
-    # This ensures that even with LUKS on root, GRUB can reach kernels without early decryption.
-    partitions.append(DiskPartition(
-        device="",
-        mountpoint="/boot",
-        filesystem="ext4",
-        size_mb=BOOT_SIZE_MB,
-    ))
+    else:
+        # For BIOS, we use a separate ext4 /boot partition.
+        partitions.append(DiskPartition(
+            device="",
+            mountpoint="/boot",
+            filesystem="ext4",
+            size_mb=BOOT_SIZE_MB,
+        ))
 
     if swap_type == "partition" and swap_mb > 0:
         partitions.append(DiskPartition(
