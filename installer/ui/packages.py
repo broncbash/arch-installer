@@ -123,7 +123,7 @@ DE_OPTIONS = [
                     "Extremely stable, well-documented, huge community. "
                     "Config file driven. Great starting point for tiling WMs.",
         "packages": ["i3-wm", "i3status", "i3lock", "dmenu",
-                     "xterm", "picom", "feh", "dunst",
+                     "rxvt-unicode", "xterm", "picom", "feh", "dunst",
                      "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
     },
@@ -135,7 +135,7 @@ DE_OPTIONS = [
         "desc":     "Tiling WM that represents windows as leaves of a binary "
                     "tree. Controlled entirely via sxhkd hotkey daemon and "
                     "shell scripts. Extremely flexible, steeper learning curve.",
-        "packages": ["bspwm", "sxhkd", "dmenu", "xterm",
+        "packages": ["bspwm", "sxhkd", "dmenu", "rxvt-unicode", "xterm",
                      "picom", "feh", "dunst", "polybar",
                      "lightdm", "lightdm-gtk-greeter"],
         "dm":       "lightdm",
@@ -408,7 +408,7 @@ class PackageScreen(BaseScreen):
         eb = Gtk.EventBox()
         eb.get_style_context().add_class("level-card")
         # Fixed size — prevents FlowBox from stretching cards to fill row width
-        eb.set_size_request(230, 110)
+        eb.set_size_request(236, 110)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
