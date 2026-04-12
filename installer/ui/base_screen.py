@@ -49,10 +49,11 @@ class _ArchSpinLogo(Gtk.DrawingArea):
 
     def __init__(self, size: int = 24):
         super().__init__()
-        self._size   = size
-        self._pixbuf = None
-        self._angle  = 0.0   # 0..2π drives the x-scale cosine
-        self._timer  = None
+        self._size    = size
+        self._pixbuf  = None
+        self._surface = None
+        self._angle   = 0.0   # 0..2π drives the x-scale cosine
+        self._timer   = None
         self.set_size_request(size, size)
         self._load_pixbuf()
         self.connect("draw", self._on_draw)
@@ -70,6 +71,11 @@ class _ArchSpinLogo(Gtk.DrawingArea):
                     self._pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
                         candidate, self._size, self._size
                     )
+                    # Create the Cairo surface once and cache it to avoid memory leaks
+                    if self._pixbuf:
+                        self._surface = Gdk.cairo_surface_create_from_pixbuf(
+                            self._pixbuf, 1, None
+                        )
                     return
                 except Exception:
                     pass
@@ -102,10 +108,8 @@ class _ArchSpinLogo(Gtk.DrawingArea):
         cr.scale(x_scale, 1.0)
         cr.translate(-cx, -cy)
 
-        if self._pixbuf:
-            from gi.repository import Gdk as _Gdk
-            surface = _Gdk.cairo_surface_create_from_pixbuf(self._pixbuf, 1, None)
-            cr.set_source_surface(surface, 0, 0)
+        if self._surface:
+            cr.set_source_surface(self._surface, 0, 0)
             cr.paint()
         else:
             # Fallback: draw cyan "A"
