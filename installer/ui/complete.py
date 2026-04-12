@@ -322,6 +322,19 @@ def _step_initramfs(state) -> tuple:
                             hooks.insert(hooks.index("filesystems"), enc_hook)
                         else:
                             hooks.append(enc_hook)
+                    # Add 'encrypt' after 'keyboard' only when LUKS is used.
+                    # We need 'keyboard' and 'keymap' before 'encrypt' so the
+                    # user can actually type their passphrase!
+                    if has_luks and "encrypt" not in hooks:
+                        # Ensure keymap and keyboard are present
+                        if "keymap" not in hooks:
+                            hooks.insert(hooks.index("autodetect") + 1, "keymap")
+                        if "keyboard" not in hooks:
+                            hooks.insert(hooks.index("keymap") + 1, "keyboard")
+
+                        # Insert encrypt after keyboard
+                        idx = hooks.index("keyboard")
+                        hooks.insert(idx + 1, "encrypt")
 
                     return f"HOOKS=({' '.join(hooks)})"
 
