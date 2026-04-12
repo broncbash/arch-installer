@@ -301,10 +301,27 @@ def _step_initramfs(state) -> tuple:
                         idx = hooks.index("udev")
                         hooks.insert(idx + 1, "plymouth")
 
-                    # Add 'encrypt' after 'block' only when LUKS is used
-                    if has_luks and "encrypt" not in hooks and "block" in hooks:
-                        idx = hooks.index("block")
-                        hooks.insert(idx + 1, "encrypt")
+                    # LUKS hooks
+                    if has_luks and "encrypt" not in hooks and "sd-encrypt" not in hooks:
+                        # Use systemd-based sd-encrypt if the 'systemd' hook is present
+                        enc_hook = "sd-encrypt" if "systemd" in hooks else "encrypt"
+
+                        # Move keymap/keyboard early so they work for passphrase input
+                        for h in ["keymap", "keyboard"]:
+                            if h in hooks:
+                                hooks.remove(h)
+
+                        # Standard mkinitcpio setup needs keyboard/keymap before encrypt
+                        # so the user can type their passphrase!
+                        base_idx = hooks.index("autodetect") if "autodetect" in hooks else 0
+                        hooks.insert(base_idx + 1, "keymap")
+                        hooks.insert(base_idx + 2, "keyboard")
+
+                        # Place encryption hook before filesystems (crucial for mounting root)
+                        if "filesystems" in hooks:
+                            hooks.insert(hooks.index("filesystems"), enc_hook)
+                        else:
+                            hooks.append(enc_hook)
 
                     return f"HOOKS=({' '.join(hooks)})"
 
@@ -377,18 +394,23 @@ def _get_luks_uuid(state) -> str:
 def _build_root_options(state) -> str:
     """
     Build kernel command-line root= options.
-    Uses PARTUUID for reliability. Adds cryptdevice= when LUKS is active.
+    Uses PARTUUID for reliability. Adds cryptdevice= and rd.luks.uuid= when LUKS is active.
     """
     if state.dry_run:
         return "root=PARTUUID=<dry-run> rw quiet splash"
+
     if state.luks_passphrase:
         luks_uuid = _get_luks_uuid(state)
         if luks_uuid:
+            # We add both cryptdevice (for 'encrypt' hook) and rd.luks.uuid (for 'sd-encrypt' or dracut)
+            # to be safe across different initramfs generators.
             return (
                 f"cryptdevice=UUID={luks_uuid}:cryptroot "
+                f"rd.luks.uuid={luks_uuid} "
                 f"root=/dev/mapper/cryptroot rw quiet splash"
             )
         return "root=/dev/mapper/cryptroot rw quiet splash"
+
     partuuid = _get_root_partuuid(state)
     if partuuid:
         return f"root=PARTUUID={partuuid} rw quiet splash"
@@ -472,7 +494,12 @@ def _step_bootloader(state) -> tuple:
 
                     # 3. Set cryptdevice= and root= kernel parameters
                     if luks_uuid:
-                        crypt_param = f"cryptdevice=UUID={luks_uuid}:cryptroot root=/dev/mapper/cryptroot"
+                        # Ensure we use the SAME options as systemd-boot for consistency
+                        crypt_param = (
+                            f"cryptdevice=UUID={luks_uuid}:cryptroot "
+                            f"rd.luks.uuid={luks_uuid} "
+                            f"root=/dev/mapper/cryptroot"
+                        )
                         if "GRUB_CMDLINE_LINUX=" in grub_txt:
                             grub_txt = _re.sub(
                                 r'GRUB_CMDLINE_LINUX="[^"]*"',

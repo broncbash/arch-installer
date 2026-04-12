@@ -11,6 +11,11 @@ mkinitcpio-archiso
 amd-ucode
 intel-ucode
 
+# ── ISO Extras (Boot menu / UEFI shell) ───────────────────────────────────────
+memtest86+
+memtest86+-efi
+edk2-shell
+
 # ── Boot / init ──────────────────────────────────────────────────────────────
 systemd
 systemd-sysvcompat
@@ -21,6 +26,7 @@ arch-install-scripts
 # ── Disk / partition / filesystem utilities ───────────────────────────────────
 parted
 gptfdisk
+efibootmgr
 dosfstools
 e2fsprogs
 btrfs-progs
@@ -49,6 +55,7 @@ pacman-contrib
 python
 python-pip
 python-pillow
+python-pytz
 
 # ── GTK3 + GObject / Cairo ────────────────────────────────────────────────────
 gtk3
@@ -58,7 +65,7 @@ gobject-introspection
 glib2
 
 # ── WebKit2GTK (wiki viewer panel) ────────────────────────────────────────────
-webkit2gtk
+webkit2gtk-4.1
 
 # ── Xorg ─────────────────────────────────────────────────────────────────────
 xorg-server
