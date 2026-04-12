@@ -720,6 +720,15 @@ def _build_auto_layout(disk_mb: int, boot_mode: str,
             size_mb=EFI_SIZE_MB,
         ))
 
+    # Always include a separate /boot partition.
+    # This ensures that even with LUKS on root, GRUB can reach kernels without early decryption.
+    partitions.append(DiskPartition(
+        device="",
+        mountpoint="/boot",
+        filesystem="ext4",
+        size_mb=BOOT_SIZE_MB,
+    ))
+
     if swap_type == "partition" and swap_mb > 0:
         partitions.append(DiskPartition(
             device="",
