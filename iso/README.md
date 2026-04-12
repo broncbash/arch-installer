@@ -50,7 +50,7 @@ The `iso/` directory must live inside the `arch-installer` repo root so that
 # First build
 sudo ./iso/build.sh
 
-# Clean rebuild (wipes work/ and out/)
+# Clean rebuild (highly recommended if build fails or output is missing)
 sudo ./iso/build.sh --clean
 
 # Build and immediately test in QEMU
@@ -61,6 +61,11 @@ sudo NFS_OUTPUT_DIR=/mnt/nas/isos ./iso/build.sh
 ```
 
 Output ISO lands in `iso/out/arch-installer-YYYY.MM.DD-x86_64.iso`.
+
+> **Note on Build Cache**: `mkarchiso` uses a work directory (`iso/work/`) to
+> cache build steps. If you modify files but don't see changes in the ISO, or
+> if the build script says "Done!" immediately without creating a new file,
+> you **must** use the `--clean` flag to clear the cache.
 
 ## How the autostart works
 
