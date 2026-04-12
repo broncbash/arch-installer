@@ -353,11 +353,11 @@ class PackageScreen(BaseScreen):
     def _build_de_section(self) -> Gtk.Widget:
         # set_size_request is necessary because GTK3 ScrolledWindow always
         # allocates its child the full viewport width, ignoring halign/hexpand.
-        # 560px fits 4 cards (130px + 6px gap each) with room to spare.
+        # 750px fits 3 cards (236px + 6px gap each) perfectly.
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_start(14)
@@ -505,7 +505,7 @@ class PackageScreen(BaseScreen):
         frame.get_style_context().add_class("card")
         frame.set_hexpand(False)
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)
@@ -600,7 +600,7 @@ class PackageScreen(BaseScreen):
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
         frame.set_size_request(750, -1)
-        frame.set_halign(Gtk.Align.START)
+        frame.set_halign(Gtk.Align.CENTER)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         box.set_margin_start(14)

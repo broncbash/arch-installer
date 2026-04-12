@@ -684,6 +684,10 @@ def _step_users(state) -> tuple:
             _copy_cfg("/usr/share/doc/bspwm/examples/bspwmrc", "bspwm", "bspwmrc")
             _copy_cfg("/usr/share/doc/bspwm/examples/sxhkdrc", "sxhkd", "sxhkdrc")
 
+        if "polybar" in extra_pkgs:
+            # Polybar example config is in /usr/share/doc/polybar/config
+            _copy_cfg("/usr/share/doc/polybar/config", "polybar", "config")
+
         logs.append(f"Created user: {uname} (shell={shell}, sudo={sudo})")
 
     return True, "\n".join(logs)

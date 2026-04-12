@@ -85,6 +85,7 @@ class InstallerWindow(Gtk.Window):
         self.state = state
         self._current_stage = 0
         self._return_to_review = False
+        self._dev_timer_id = 0
 
         # Window setup — maximize to fill the screen (important for VM displays
         # which may be smaller than 1100px). set_default_size is the fallback
@@ -235,6 +236,7 @@ class InstallerWindow(Gtk.Window):
         Called by GLib.timeout_add to auto-advance through a stage.
         Only fires if we're still on the same stage (guards against double-advance).
         """
+        self._dev_timer_id = 0
         if self._current_stage != stage_index:
             return False  # already moved on, do nothing
         screen = self._stack.get_child_by_name(self._stage_name(stage_index))
@@ -262,6 +264,11 @@ class InstallerWindow(Gtk.Window):
 
     def _go_to_stage(self, index: int):
         """Switch the stack to the given stage, building it if needed."""
+        # Cancel any pending dev auto-advance timer
+        if self._dev_timer_id:
+            GLib.source_remove(self._dev_timer_id)
+            self._dev_timer_id = 0
+
         name = self._stage_name(index)
         if not self._stack.get_child_by_name(name):
             self._build_stage(index)
@@ -272,7 +279,7 @@ class InstallerWindow(Gtk.Window):
         # Use a 500ms delay so the screen fully renders and _nav_ready fires
         # before we try to advance. Only one timer is ever pending at a time.
         if DEV_AUTOFILL and index in self._DEV_AUTO_STAGES:
-            GLib.timeout_add(500, self._dev_advance_stage, index)
+            self._dev_timer_id = GLib.timeout_add(500, self._dev_advance_stage, index)
 
     def _jump_to_stage(self, index: int):
         """Called by ReviewScreen edit buttons to jump back to an earlier stage."""
