@@ -336,6 +336,19 @@ def _step_initramfs(state) -> tuple:
                             hooks.insert(hooks.index("filesystems"), enc_hook)
                         else:
                             hooks.append(enc_hook)
+                    # Add 'encrypt' after 'keyboard' only when LUKS is used.
+                    # We need 'keyboard' and 'keymap' before 'encrypt' so the
+                    # user can actually type their passphrase!
+                    if has_luks and "encrypt" not in hooks:
+                        # Ensure keymap and keyboard are present
+                        if "keymap" not in hooks:
+                            hooks.insert(hooks.index("autodetect") + 1, "keymap")
+                        if "keyboard" not in hooks:
+                            hooks.insert(hooks.index("keymap") + 1, "keyboard")
+
+                        # Insert encrypt after keyboard
+                        idx = hooks.index("keyboard")
+                        hooks.insert(idx + 1, "encrypt")
 
                     return f"HOOKS=({' '.join(hooks)})"
 
@@ -416,13 +429,11 @@ def _build_root_options(state) -> str:
     if state.luks_passphrase:
         luks_uuid = _get_luks_uuid(state)
         if luks_uuid:
-            # We add both cryptdevice (for 'encrypt' hook) and rd.luks.name (for 'sd-encrypt' or dracut)
+            # We add both cryptdevice (for 'encrypt' hook) and rd.luks.uuid (for 'sd-encrypt' or dracut)
             # to be safe across different initramfs generators.
-            # rd.luks.name=<UUID>=<name> ensures the mapper device is named 'cryptroot'
-            # which matches our root= parameter and fstab.
             return (
                 f"cryptdevice=UUID={luks_uuid}:cryptroot "
-                f"rd.luks.name={luks_uuid}=cryptroot "
+                f"rd.luks.uuid={luks_uuid} "
                 f"root=/dev/mapper/cryptroot rw quiet splash"
             )
         return "root=/dev/mapper/cryptroot rw quiet splash"
@@ -513,7 +524,7 @@ def _step_bootloader(state) -> tuple:
                         # Ensure we use the SAME options as systemd-boot for consistency
                         crypt_param = (
                             f"cryptdevice=UUID={luks_uuid}:cryptroot "
-                            f"rd.luks.name={luks_uuid}=cryptroot "
+                            f"rd.luks.uuid={luks_uuid} "
                             f"root=/dev/mapper/cryptroot"
                         )
                         if "GRUB_CMDLINE_LINUX=" in grub_txt:
