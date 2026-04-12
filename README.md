@@ -133,6 +133,11 @@ sudo ./build.sh
 - **Wait for completion**: This can take 5-10 minutes depending on your CPU and internet speed.
 - **Result**: Once finished, your bootable file will be in `iso/out/` (e.g., `arch-installer-2025.01.20-x86_64.iso`).
 
+> **Troubleshooting "Done!" without output**: If `mkarchiso` finishes immediately
+> and reports "Done!" but no new ISO is created in `iso/out`, it means its build
+> cache is out of sync. **Run `sudo ./build.sh --clean`** to clear the cache and
+> force a fresh build.
+
 ### 3. Verification & Testing
 
 Before writing to a USB drive, it is highly recommended to test the ISO in a virtual machine:
