@@ -29,6 +29,14 @@ class DiskPartition:
 
 
 @dataclass
+class BtrfsSubvolume:
+    """Represents a Btrfs subvolume."""
+    name: str            # e.g. @, @home
+    mountpoint: str      # e.g. /, /home
+    options: str = "noatime,compress=zstd,space_cache=v2"
+
+
+@dataclass
 class InstallState:
     """
     All installer selections live here.
@@ -60,7 +68,8 @@ class InstallState:
     swap_size_mb: int = 0            # 0 = no swap partition
     use_swap_file: bool = False
     luks_passphrase: str = ""        # only set if any partition has encrypt=True
-    btrfs_subvolumes: bool = False   # create standard Btrfs subvolume layout
+    use_btrfs_subvolumes: bool = False
+    btrfs_subvolumes: List[BtrfsSubvolume] = field(default_factory=list)
 
     # ── Filesystem ────────────────────────────────────────────────────────────
     root_filesystem: str = "ext4"    # 'ext4' | 'btrfs' | 'xfs' | 'f2fs'

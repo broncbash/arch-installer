@@ -55,13 +55,15 @@ FS_DESCRIPTIONS = {
     "f2fs":  "Flash-Friendly Filesystem. Optimised for SSDs and NVMe drives.",
 }
 
+from installer.state import BtrfsSubvolume
+
 # Standard Btrfs subvolume layout (the @ naming convention)
 BTRFS_SUBVOLS = [
-    ("@",          "/",        "Root subvolume"),
-    ("@home",      "/home",    "Home directories"),
-    ("@snapshots", "/.snapshots", "Snapshot storage"),
-    ("@log",       "/var/log", "System logs (keeps logs out of snapshots)"),
-    ("@cache",     "/var/cache", "Package cache"),
+    ("@",          "/",        "noatime,compress=zstd,space_cache=v2"),
+    ("@home",      "/home",    "noatime,compress=zstd,space_cache=v2"),
+    ("@snapshots", "/.snapshots", "noatime,compress=zstd,space_cache=v2"),
+    ("@log",       "/var/log", "noatime,compress=zstd,space_cache=v2"),
+    ("@cache",     "/var/cache", "noatime,compress=zstd,space_cache=v2"),
 ]
 
 
@@ -84,7 +86,8 @@ class FilesystemScreen(BaseScreen):
         # Initialise choices from state (handles coming Back)
         self._root_fs      = state.root_filesystem or "ext4"
         self._encrypt      = bool(state.luks_passphrase)
-        self._btrfs_subvols = state.btrfs_subvolumes
+        self._use_btrfs_subvols = state.use_btrfs_subvolumes
+        self._custom_subvols = list(state.btrfs_subvolumes)
 
         super().__init__(state=state, on_next=on_next, on_back=on_back)
         self.set_next_enabled(True)
@@ -287,7 +290,7 @@ class FilesystemScreen(BaseScreen):
         frame = Gtk.Frame()
         frame.get_style_context().add_class("card")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_start(14)
         box.set_margin_end(14)
         box.set_margin_top(12)
@@ -299,37 +302,157 @@ class FilesystemScreen(BaseScreen):
         box.pack_start(heading, False, False, 0)
 
         self._btrfs_subvol_check = Gtk.CheckButton(
-            label="Use standard subvolume layout (recommended)"
+            label="Use Btrfs subvolumes"
         )
-        self._btrfs_subvol_check.set_active(self._btrfs_subvols)
+        self._btrfs_subvol_check.set_active(self._use_btrfs_subvols)
         self._btrfs_subvol_check.connect("toggled", self._on_btrfs_toggled)
         box.pack_start(self._btrfs_subvol_check, False, False, 0)
 
-        # Show the subvolume list as a reference
-        subvol_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        subvol_box.set_margin_start(24)
-        for name, mount, desc in BTRFS_SUBVOLS:
-            lbl = Gtk.Label(label=f"{name:<14}  →  {mount:<20}  {desc}")
+        self._btrfs_options_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._btrfs_options_box.set_margin_start(24)
+
+        # Radio buttons for Standard vs Custom
+        radio_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        self._subvol_mode_standard = Gtk.RadioButton.new_with_label(None, "Standard layout")
+        self._subvol_mode_standard.connect("toggled", self._on_subvol_mode_toggled)
+        radio_box.pack_start(self._subvol_mode_standard, False, False, 0)
+
+        self._subvol_mode_custom = Gtk.RadioButton.new_with_label_from_widget(
+            self._subvol_mode_standard, "Custom layout")
+        self._subvol_mode_custom.connect("toggled", self._on_subvol_mode_toggled)
+        radio_box.pack_start(self._subvol_mode_custom, False, False, 0)
+
+        self._btrfs_options_box.pack_start(radio_box, False, False, 0)
+
+        # Standard layout info
+        self._standard_info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for name, mount, opts in BTRFS_SUBVOLS:
+            lbl = Gtk.Label(label=f"  {name:<12} → {mount}")
             lbl.get_style_context().add_class("detail-value")
             lbl.set_xalign(0)
             lbl.override_font(Pango.FontDescription("Monospace 9"))
-            subvol_box.pack_start(lbl, False, False, 0)
-        box.pack_start(subvol_box, False, False, 0)
+            self._standard_info.pack_start(lbl, False, False, 0)
+        self._btrfs_options_box.pack_start(self._standard_info, False, False, 0)
+
+        # Custom layout table
+        self._custom_layout_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        add_btn = Gtk.Button(label="＋ Add")
+        add_btn.connect("clicked", self._on_add_subvol)
+        toolbar.pack_start(add_btn, False, False, 0)
+        edit_btn = Gtk.Button(label="✎ Edit")
+        edit_btn.connect("clicked", self._on_edit_subvol)
+        toolbar.pack_start(edit_btn, False, False, 0)
+        del_btn = Gtk.Button(label="✕ Remove")
+        del_btn.connect("clicked", self._on_delete_subvol)
+        toolbar.pack_start(del_btn, False, False, 0)
+        self._custom_layout_box.pack_start(toolbar, False, False, 0)
+
+        self._subvol_store = Gtk.ListStore(int, str, str, str)
+        self._subvol_tree = Gtk.TreeView(model=self._subvol_store)
+        for i, h in enumerate(["#", "Name", "Mountpoint", "Options"]):
+            res = Gtk.CellRendererText()
+            col = Gtk.TreeViewColumn(h, res, text=i)
+            self._subvol_tree.append_column(col)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_min_content_height(120)
+        scroll.add(self._subvol_tree)
+        self._custom_layout_box.pack_start(scroll, True, True, 0)
+
+        self._btrfs_options_box.pack_start(self._custom_layout_box, True, True, 0)
+        box.pack_start(self._btrfs_options_box, True, True, 0)
 
         frame.add(box)
+
+        # Set initial subvol mode
+        if self.state.btrfs_subvolumes:
+             self._subvol_mode_custom.set_active(True)
+             self._sync_subvol_store()
+        else:
+             self._subvol_mode_standard.set_active(True)
+
         return frame
 
     def _on_btrfs_toggled(self, btn):
-        self._btrfs_subvols = btn.get_active()
+        self._use_btrfs_subvols = btn.get_active()
+        if self._use_btrfs_subvols:
+            self._btrfs_options_box.show()
+        else:
+            self._btrfs_options_box.hide()
+
+    def _on_subvol_mode_toggled(self, btn):
+        if not btn.get_active(): return
+        if btn == self._subvol_mode_standard:
+            self._standard_info.show()
+            self._custom_layout_box.hide()
+        else:
+            self._standard_info.hide()
+            self._custom_layout_box.show()
+            if not self._custom_subvols:
+                # Pre-populate with standard if empty
+                self._custom_subvols = [BtrfsSubvolume(name=n, mountpoint=m, options=o)
+                                        for n, m, o in BTRFS_SUBVOLS]
+                self._sync_subvol_store()
+
+    def _sync_subvol_store(self):
+        self._subvol_store.clear()
+        for i, s in enumerate(self._custom_subvols):
+            self._subvol_store.append([i, s.name, s.mountpoint, s.options])
+
+    def _on_add_subvol(self, btn):
+        self._open_subvol_dialog()
+
+    def _on_edit_subvol(self, btn):
+        model, it = self._subvol_tree.get_selection().get_selected()
+        if it:
+            idx = model.get_value(it, 0)
+            self._open_subvol_dialog(self._custom_subvols[idx], idx)
+
+    def _on_delete_subvol(self, btn):
+        model, it = self._subvol_tree.get_selection().get_selected()
+        if it:
+            idx = model.get_value(it, 0)
+            self._custom_subvols.pop(idx)
+            self._sync_subvol_store()
+
+    def _open_subvol_dialog(self, existing=None, idx=None):
+        dialog = Gtk.Dialog(title="Btrfs Subvolume", transient_for=self.get_toplevel(), flags=Gtk.DialogFlags.MODAL)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+
+        grid = Gtk.Grid(column_spacing=10, row_spacing=10, margin=15)
+
+        grid.attach(Gtk.Label(label="Name:"), 0, 0, 1, 1)
+        name_ent = Gtk.Entry(text=existing.name if existing else "@")
+        grid.attach(name_ent, 1, 0, 1, 1)
+
+        grid.attach(Gtk.Label(label="Mountpoint:"), 0, 1, 1, 1)
+        mnt_ent = Gtk.Entry(text=existing.mountpoint if existing else "/")
+        grid.attach(mnt_ent, 1, 1, 1, 1)
+
+        grid.attach(Gtk.Label(label="Options:"), 0, 2, 1, 1)
+        opt_ent = Gtk.Entry(text=existing.options if existing else "noatime,compress=zstd,space_cache=v2")
+        grid.attach(opt_ent, 1, 2, 1, 1)
+
+        dialog.get_content_area().add(grid)
+        dialog.show_all()
+
+        if dialog.run() == Gtk.ResponseType.OK:
+            new_sv = BtrfsSubvolume(name=name_ent.get_text(), mountpoint=mnt_ent.get_text(), options=opt_ent.get_text())
+            if existing: self._custom_subvols[idx] = new_sv
+            else: self._custom_subvols.append(new_sv)
+            self._sync_subvol_store()
+        dialog.destroy()
 
     def _update_btrfs_visibility(self):
         """Show Btrfs section only when btrfs is selected and level > beginner."""
         is_beginner = self.state.experience_level == "beginner"
         if self._root_fs == "btrfs" and not is_beginner:
             self._btrfs_section.show()
+            self._on_btrfs_toggled(self._btrfs_subvol_check)
         else:
             self._btrfs_section.hide()
-            self._btrfs_subvols = False
 
     # ── Encryption section ────────────────────────────────────────────────────
 
@@ -524,7 +647,21 @@ class FilesystemScreen(BaseScreen):
     def on_next(self):
         """Save all filesystem and encryption choices to state."""
         self.state.root_filesystem  = self._root_fs
-        self.state.btrfs_subvolumes = self._btrfs_subvols
+
+        # Only use Btrfs subvolumes if the root filesystem is Btrfs
+        if self._root_fs == "btrfs":
+            self.state.use_btrfs_subvolumes = self._use_btrfs_subvols
+        else:
+            self.state.use_btrfs_subvolumes = False
+
+        if self.state.use_btrfs_subvolumes:
+            if self._subvol_mode_standard.get_active():
+                self.state.btrfs_subvolumes = [BtrfsSubvolume(name=n, mountpoint=m, options=o)
+                                              for n, m, o in BTRFS_SUBVOLS]
+            else:
+                self.state.btrfs_subvolumes = list(self._custom_subvols)
+        else:
+            self.state.btrfs_subvolumes = []
 
         if self._encrypt:
             passphrase = self._pass_entry.get_text()

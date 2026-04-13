@@ -337,7 +337,7 @@ def _step_mount(state) -> tuple:
         if not ok:
             return False, out
 
-        if p.filesystem == "btrfs" and p.mountpoint == "/" and state.btrfs_subvolumes:
+        if p.filesystem == "btrfs" and p.mountpoint == "/" and state.use_btrfs_subvolumes:
             ok, out = _mount_btrfs_subvolumes(p, state)
             if not ok:
                 return False, out
@@ -356,50 +356,73 @@ def _step_mount(state) -> tuple:
 
 
 def _mount_btrfs_subvolumes(p, state) -> tuple:
-    """Create and mount standard btrfs subvolumes: @, @home, @snapshots."""
+    """Create and mount btrfs subvolumes defined in state."""
     logs = []
 
+    # 1. Mount the Btrfs partition root temporarily to create subvolumes
     ok, out = run_cmd(
         ["mount", p.device, "/mnt"],
-        state, "Mount btrfs root temporarily"
+        state, "Mount btrfs partition temporarily"
     )
     if not ok:
         return False, out
 
-    for subvol in ["@", "@home", "@snapshots"]:
+    for sv in state.btrfs_subvolumes:
         ok, out = run_cmd(
-            ["btrfs", "subvolume", "create", f"/mnt/{subvol}"],
-            state, f"Create btrfs subvolume {subvol}"
+            ["btrfs", "subvolume", "create", f"/mnt/{sv.name}"],
+            state, f"Create btrfs subvolume {sv.name}"
         )
         if not ok:
-            return False, out
-        logs.append(out)
+            # Maybe it already exists? mkfs.btrfs should have wiped it, but just in case
+            logs.append(f"[warn] Failed to create subvolume {sv.name}: {out}")
+        else:
+            logs.append(out)
 
     ok, out = run_cmd(["umount", "/mnt"], state, "Unmount btrfs temp mount")
     if not ok:
         return False, out
 
-    mnt_opts = "noatime,compress=zstd,space_cache=v2,subvol=@"
+    # 2. Mount subvolumes in order (shorter mountpoints first)
+    # Important: root subvolume must be mounted FIRST at /mnt
+    sorted_subvols = sorted(state.btrfs_subvolumes, key=lambda s: s.mountpoint.count("/"))
+
+    root_sv = next((s for s in sorted_subvols if s.mountpoint == "/"), None)
+    if not root_sv:
+        return False, "No root (/) subvolume defined for Btrfs."
+
+    # Remove root from sorted list to handle it explicitly first
+    sorted_subvols.remove(root_sv)
+
+    # Mount root subvolume
+    mnt_opts = f"{root_sv.options},subvol={root_sv.name}"
     ok, out = run_cmd(
         ["mount", "-o", mnt_opts, p.device, "/mnt"],
-        state, "Mount @ subvolume as root"
+        state, f"Mount root subvolume {root_sv.name} → /mnt"
     )
     if not ok:
         return False, out
     logs.append(out)
 
-    ok, out = run_cmd(["mkdir", "-p", "/mnt/home"], state, "Create /mnt/home")
-    if not ok:
-        return False, out
+    # Mount remaining subvolumes
+    for sv in sorted_subvols:
+        # Ensure target path is correctly joined: /mnt + /home -> /mnt/home
+        target = os.path.join(MOUNTPOINT, sv.mountpoint.lstrip('/'))
 
-    home_opts = "noatime,compress=zstd,space_cache=v2,subvol=@home"
-    ok, out = run_cmd(
-        ["mount", "-o", home_opts, p.device, "/mnt/home"],
-        state, "Mount @home subvolume"
-    )
-    if not ok:
-        return False, out
-    logs.append(out)
+        ok, out = run_cmd(
+            ["mkdir", "-p", target],
+            state, f"Create subvolume mountpoint {target}"
+        )
+        if not ok:
+            return False, out
+
+        mnt_opts = f"{sv.options},subvol={sv.name}"
+        ok, out = run_cmd(
+            ["mount", "-o", mnt_opts, p.device, target],
+            state, f"Mount subvolume {sv.name} → {target}"
+        )
+        if not ok:
+            return False, out
+        logs.append(out)
 
     return True, "\n".join(logs)
 
