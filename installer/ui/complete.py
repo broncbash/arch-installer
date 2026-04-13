@@ -363,6 +363,13 @@ def _step_initramfs(state) -> tuple:
 
 def _get_efi_dir(state) -> str:
     """Return the ESP mountpoint as seen inside the chroot (e.g. /boot)."""
+    # Prefer the partition specifically identified as efi_partition
+    efi_dev = getattr(state, "efi_partition", "")
+    if efi_dev:
+        for p in state.partitions:
+            if p.device == efi_dev:
+                return p.mountpoint
+    # Fallback search
     for p in state.partitions:
         if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
             return p.mountpoint
@@ -627,13 +634,8 @@ def _step_bootloader(state) -> tuple:
 
         # ── grub-install ──────────────────────────────────────────────────────
         if state.boot_mode == "uefi":
-            # Determine where the ESP is actually mounted (auto = /boot/efi,
-            # manual may use /boot or /efi — read from state.partitions)
-            efi_dir = "/boot/efi"  # safe default matching auto partition scheme
-            for p in state.partitions:
-                if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
-                    efi_dir = p.mountpoint
-                    break
+            # Determine where the ESP is actually mounted
+            efi_dir = _get_efi_dir(state)
             ok, out = run_chroot(
                 ["grub-install",
                  "--target=x86_64-efi",
@@ -667,8 +669,9 @@ def _step_bootloader(state) -> tuple:
 
         # bootctl install runs inside the chroot so it can write EFI vars.
         # --esp-path is the correct modern flag (not the deprecated --path alias).
+        # We also pass --boot-path so systemd-boot knows where the kernels are.
         ok, out = run_chroot(
-            ["bootctl", f"--esp-path={efi_dir}", "install"],
+            ["bootctl", f"--esp-path={efi_dir}", f"--boot-path={efi_dir}", "install"],
             state, description="bootctl install"
         )
         if not ok:
@@ -688,8 +691,7 @@ def _step_bootloader(state) -> tuple:
 
         # Write config files directly in Python to avoid shell escaping issues.
         # loader.conf: 'default' must be the entry filename WITH .conf extension.
-        # Entry paths are relative to the ESP root; Beginner layout puts ESP at
-        # /boot so /vmlinuz-linux, /initramfs-linux.img are correct as-is.
+        # All paths (linux, initrd) are relative to the ESP root.
         if not state.dry_run:
             import os as _os2
             try:

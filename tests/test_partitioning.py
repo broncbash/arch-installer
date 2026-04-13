@@ -71,12 +71,11 @@ def test_build_auto_layout_includes_boot():
     mountpoints_uefi = [p.mountpoint for p in partitions_uefi]
     print(f"UEFI Mountpoints: {mountpoints_uefi}")
     assert "/boot" in mountpoints_uefi
-    assert "/boot/efi" in mountpoints_uefi
     assert "/" in mountpoints_uefi
 
-    # Verify /boot is ext4
+    # Verify /boot is vfat on UEFI
     boot_part = next(p for p in partitions_uefi if p.mountpoint == "/boot")
-    assert boot_part.filesystem == "ext4"
+    assert boot_part.filesystem == "vfat"
     assert boot_part.size_mb == 512
 
     # Test BIOS

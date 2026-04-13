@@ -87,8 +87,8 @@ class PartitionScreen(BaseScreen):
                 f"🗂️  Partition Scheme\n\n"
                 f"Disk: {disk}  •  Boot: {bmode}  •  Table: {ptbl}\n\n"
                 "Auto mode creates a standard layout:\n"
-                "  UEFI: EFI (512MB) + swap + root\n"
-                "  BIOS: swap + root\n\n"
+                "  UEFI: /boot (512MB, vfat) + swap + root\n"
+                "  BIOS: /boot (512MB, ext4) + swap + root\n\n"
                 "Manual mode lets you define your own partition table. "
                 "Use this if you want a separate /home, specific sizes, "
                 "or a non-standard layout.\n\n"
@@ -699,11 +699,12 @@ def _build_auto_layout(disk_mb: int, boot_mode: str,
     Build the automatic partition layout as a list of DiskPartition objects.
 
     UEFI layout:
-        /boot/efi   vfat   512MB
+        /boot       vfat   512MB     (ESP - contains kernels + bootloader)
         swap        swap   swap_mb   (if swap_type == 'partition')
         /           ext4   rest
 
     BIOS layout:
+        /boot       ext4   512MB     (Standard boot partition)
         swap        swap   swap_mb   (if swap_type == 'partition')
         /           ext4   rest
 
@@ -712,21 +713,16 @@ def _build_auto_layout(disk_mb: int, boot_mode: str,
     """
     partitions = []
 
-    if boot_mode == "uefi":
-        partitions.append(DiskPartition(
-            device="",           # filled in at install time
-            mountpoint="/boot/efi",
-            filesystem="vfat",
-            size_mb=EFI_SIZE_MB,
-        ))
-
     # Always include a separate /boot partition.
-    # This ensures that even with LUKS on root, GRUB can reach kernels without early decryption.
+    # For UEFI, /boot is the ESP (vfat). For BIOS, /boot is standard ext4.
+    # This ensures that even with LUKS on root, the bootloader can reach
+    # kernels and initramfs images without needing early decryption.
+    boot_fs = "vfat" if boot_mode == "uefi" else "ext4"
     partitions.append(DiskPartition(
         device="",
         mountpoint="/boot",
-        filesystem="ext4",
-        size_mb=BOOT_SIZE_MB,
+        filesystem=boot_fs,
+        size_mb=EFI_SIZE_MB if boot_mode == "uefi" else BOOT_SIZE_MB,
     ))
 
     if swap_type == "partition" and swap_mb > 0:
