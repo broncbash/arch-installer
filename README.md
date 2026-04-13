@@ -13,10 +13,11 @@
 ---
 
 > ⚠️ **This project is in active development and not yet ready for use on real hardware.**
-> End-to-end VM installs are working. LUKS encryption, Plymouth boot splash, and
-> post-install configuration are functional. A developer autofill system has been
-> added to speed up bootloader testing. A small number of known issues remain
-> (see below).
+> End-to-end VM installs are working. Preliminary testing has been completed on
+> bootloaders with ext4, and rEFInd is currently the only one with known issues
+> and is the primary focus of development. LUKS encryption, Plymouth boot splash,
+> and post-install configuration are functional. A small number of known issues
+> remain (see below).
 
 ---
 
@@ -74,7 +75,7 @@ Built with GTK3 and Python, following Arch Wiki installation standards exactly.
 | 11 | User Setup | ✅ Complete |
 | 12 | Review & Confirm | ✅ Complete |
 | 13 | Base Install (pacstrap) | ✅ Complete |
-| 14 | Bootloader | ✅ Complete |
+| 14 | Bootloader | 🚧 WIP |
 | 15 | Complete / Reboot | ✅ Complete |
 
 All 16 stages complete. VM end-to-end testing in progress. 🚧
@@ -94,8 +95,10 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
   have a race condition due to multiple GLib closure callbacks firing on rapid
   screen transitions. Manual click-through works correctly. Fix planned for next
   session.
-- **Non-GRUB bootloaders** — rewritten with correct helper functions but not yet
-  confirmed working. Testing in progress.
+- **rEFInd Bootloader** — This is the current primary focus. While other
+  bootloaders (GRUB, systemd-boot, EFIStub, UKI) are functional on ext4, rEFInd
+  is not yet working. Further testing of all bootloaders across various
+  filesystems is planned.
 
 ---
 
