@@ -84,13 +84,6 @@ All 16 stages complete. VM end-to-end testing in progress. 🚧
 
 ## Known Issues
 
-- **Package selection screen gap** — The DE/WM card container is fixed-width and
-  sits left-aligned, leaving empty space before the hints panel. Cosmetic only —
-  all functionality works correctly.
-- **LUKS pre-menu passphrase prompt** — when using Beginner auto-partitioning with
-  LUKS, GRUB asks for the passphrase before showing the boot menu because `/boot`
-  lives inside the encrypted root partition. A separate `/boot` partition in the
-  auto layout will fix this in a future session.
 - **DEV_AUTOFILL auto-advance** — per-screen auto-advance hooks are in place but
   have a race condition due to multiple GLib closure callbacks firing on rapid
   screen transitions. Manual click-through works correctly. Fix planned for next
