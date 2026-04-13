@@ -174,10 +174,11 @@ def _assign_partition_devices(state):
     for i, p in enumerate(state.partitions, start=1):
         p.device = f"{disk}{sep}{i}"
     # Also record EFI partition in state
-    for p in state.partitions:
-        if p.mountpoint in ("/boot", "/boot/efi"):
-            state.efi_partition = p.device
-            break
+    if state.boot_mode == "uefi":
+        for p in state.partitions:
+            if p.filesystem == "vfat" and p.mountpoint in ("/boot", "/boot/efi", "/efi"):
+                state.efi_partition = p.device
+                break
 
 
 def _step_format(state) -> tuple:
