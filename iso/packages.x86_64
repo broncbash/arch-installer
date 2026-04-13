@@ -27,6 +27,7 @@ arch-install-scripts
 parted
 gptfdisk
 efibootmgr
+refind
 dosfstools
 e2fsprogs
 btrfs-progs

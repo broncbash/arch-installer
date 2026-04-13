@@ -412,9 +412,18 @@ def _build_root_options(state) -> str:
     """
     Build kernel command-line root= options.
     Uses PARTUUID for reliability. Adds cryptdevice= and rd.luks.uuid= when LUKS is active.
+    For Btrfs with subvolumes, adds rootflags=subvol=<name>.
     """
     if state.dry_run:
         return "root=PARTUUID=<dry-run> rw quiet splash"
+
+    # Add rootflags for Btrfs subvolumes
+    btrfs_opts = ""
+    if state.root_filesystem == "btrfs" and state.use_btrfs_subvolumes:
+        # Find the root subvolume name (usually @)
+        root_sv = next((s for s in state.btrfs_subvolumes if s.mountpoint == "/"), None)
+        if root_sv:
+            btrfs_opts = f" rootflags=subvol={root_sv.name}"
 
     if state.luks_passphrase:
         luks_uuid = _get_luks_uuid(state)
@@ -424,14 +433,14 @@ def _build_root_options(state) -> str:
             return (
                 f"cryptdevice=UUID={luks_uuid}:root "
                 f"rd.luks.name={luks_uuid}=root "
-                f"root=/dev/mapper/root rw quiet splash"
+                f"root=/dev/mapper/root{btrfs_opts} rw quiet splash"
             )
-        return "root=/dev/mapper/root rw quiet splash"
+        return f"root=/dev/mapper/root{btrfs_opts} rw quiet splash"
 
     partuuid = _get_root_partuuid(state)
     if partuuid:
-        return f"root=PARTUUID={partuuid} rw quiet splash"
-    return "root=LABEL=root rw quiet splash"
+        return f"root=PARTUUID={partuuid}{btrfs_opts} rw quiet splash"
+    return f"root=LABEL=root{btrfs_opts} rw quiet splash"
 
 
 def _get_efi_part_info(state) -> tuple:
@@ -733,9 +742,9 @@ def _step_bootloader(state) -> tuple:
         # substitution that arch-chroot doesn't handle well.
         # Correct approach: run it from the LIVE system with --root /mnt so it
         # installs rEFInd into the target ESP without trying to chroot itself.
-        # The binary lives at /usr/bin/refind-install inside the new system.
+        # The binary must be available in the LIVE system (added to iso/packages.x86_64).
         ok, out = run_cmd(
-            [f"{MOUNTPOINT}/usr/bin/refind-install", "--root", MOUNTPOINT],
+            ["refind-install", "--root", MOUNTPOINT],
             state, description="refind-install --root /mnt"
         )
         if not ok:
