@@ -706,9 +706,20 @@ def _step_bootloader(state) -> tuple:
                     "initrd  /initramfs-linux.img\n"
                     f"options {root_opts}\n"
                 )
-                with open(f"{esp_host}/loader/entries/arch.conf", "w") as f:
-                    f.write(entry)
-                logs.append(f"Wrote arch.conf (options: {root_opts})")
+
+                # Per user request: generate entry at /boot/loader/entries/arch.conf
+                # Also ensure it is written to the ESP's entry directory if different.
+                # All paths (linux, initrd) are relative to the ESP root.
+                conf_paths = {f"{MOUNTPOINT}/boot/loader/entries/arch.conf",
+                              f"{esp_host}/loader/entries/arch.conf"}
+
+                for cp in conf_paths:
+                    _os2.makedirs(_os2.path.dirname(cp), exist_ok=True)
+                    with open(cp, "w") as f:
+                        f.write(entry)
+                    logs.append(f"Wrote loader entry: {cp}")
+
+                logs.append(f"Options: {root_opts}")
             except OSError as e:
                 return False, f"Could not write systemd-boot config: {e}"
         else:
