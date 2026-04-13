@@ -742,9 +742,9 @@ def _step_bootloader(state) -> tuple:
         # substitution that arch-chroot doesn't handle well.
         # Correct approach: run it from the LIVE system with --root /mnt so it
         # installs rEFInd into the target ESP without trying to chroot itself.
-        # The binary lives at /usr/bin/refind-install inside the new system.
+        # The binary must be available in the LIVE system (added to iso/packages.x86_64).
         ok, out = run_cmd(
-            [f"{MOUNTPOINT}/usr/bin/refind-install", "--root", MOUNTPOINT],
+            ["refind-install", "--root", MOUNTPOINT],
             state, description="refind-install --root /mnt"
         )
         if not ok:
